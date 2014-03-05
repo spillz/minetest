@@ -28,7 +28,6 @@ import string
 import time
 import getopt
 import sys
-import array
 import cStringIO
 import traceback
 import numpy
@@ -246,9 +245,6 @@ zlist = []
 # List all sectors to memory and calculate the width and heigth of the
 # resulting picture.
 
-t=time.time()
-print 'LISTING SECTORS AND CALCULATING PICTURE SIZE'
-
 conn = None
 cur = None
 if os.path.exists(path + "map.sqlite"):
@@ -298,8 +294,6 @@ if os.path.exists(path + "sectors"):
 if len(xlist) == 0 or len(zlist) == 0:
     print("World does not exist.")
     sys.exit(1)
-
-print 'GETTING SECTOR LIST TOOK',time.time()-t
 
 # Get rid of doubles
 xlist, zlist = zip(*sorted(set(zip(xlist, zlist))))
@@ -398,8 +392,6 @@ def read_mapdata(mapdata, version, plist, cdata, hdata, dnddata, day_night_diffe
     return plist
 
 
-print 'STARTING SECTOR READ'
-t=time.time()
 read_map_time = 0
 
 # Go through all sectors.
@@ -532,10 +524,7 @@ for n in range(len(xlist)):
             dec_o = zlib.decompressobj()
             try:
                 s = dec_o.decompress(f.read())
-                mapdata2 = read_content(array.array("B", s),version)
                 mapdata = numpy.fromstring(s,">u2")
-                if mapdata2.sum()!=0:
-                    t=1
             except:
                 mapdata = []
 #                mapdata2 = numpy.array([])
@@ -549,7 +538,7 @@ for n in range(len(xlist)):
             dec_o = zlib.decompressobj()
             try:
                 s=dec_o.decompress(f.read())
-                metaliststr = array.array("B", s)
+                metaliststr = numpy.fromstring(s,"u1")
                 # And do nothing with it
             except:
                 metaliststr = []
@@ -628,17 +617,12 @@ for n in range(len(xlist)):
                     readU16(f)
                     readS32(f)
                     readS32(f)
-            t1=time.time()
             plist = read_mapdata(mapdata, version, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air)
-            t1=time.time()-t1
-#            print xpos,ypos,zpos,t1
-            read_map_time += t1
             # After finding all the pixels in the sector, we can move on to
             # the next sector without having to continue the Y axis.
             if len(plist) == 0 or y==ylist[0]:
                 chunkxpos = (xpos-minx)*16
                 chunkzpos = (zpos-minz)*16
-                #print chunkxpos,chunkzpos
                 pos = (slice(chunkxpos,chunkxpos+16),slice(chunkzpos,chunkzpos+16))
                 stuff['height'][pos] = hdata.reshape(16,16)
                 stuff['content'][pos] = cdata.reshape(16,16)
@@ -657,11 +641,7 @@ for n in range(len(xlist)):
             sys.stdout.write(os.linesep)
             traceback.print_exc()
 
-print "SECTOR READ TOOK",time.time()-t
-print "read_map took",read_map_time
-
 print("Drawing image")
-t=time.time()
 # Drawing the picture
 starttime = time.time()
 count_dnd=0
@@ -688,9 +668,6 @@ for (x, z) in itertools.product(range(w),range(h)): # stuff.iterkeys():
                     + " (ETA: " + str(remaining_minutes) + "m "
                     + str(int(remaining_s)) + "s)")
     n += 1
-
-#    (r, g, b) = colors[stuff['content'][x, z]]
-#    print 'pixel',x,z,r,g,b
 
     try:
         (r, g, b) = colors[stuff['content'][x, z]]
@@ -748,10 +725,6 @@ for (x, z) in itertools.product(range(w),range(h)): # stuff.iterkeys():
 
     impix[x - border, h - 1 - z + border] = (r, g, b)
 
-print ('DRAWING IMAGE TOOK',time.time()-t)
-
-
-t=time.time()
 
 if draworigin:
     draw.ellipse((minx * -16 - 5 + border, h - minz * -16 - 6 + border,
@@ -815,5 +788,3 @@ if unknown_node_ids:
     for node_id in unknown_node_ids:
         sys.stdout.write(" "+str(hex(node_id)))
     sys.stdout.write(os.linesep)
-
-print 'Finalization took',time.time()-t
