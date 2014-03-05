@@ -647,85 +647,32 @@ starttime = time.time()
 count_dnd=0
 count_height=0
 count_zero=0
-n = 0
-for (x, z) in itertools.product(range(w),range(h)): # stuff.iterkeys():
-    if n % 500000 == 0:
-        nowtime = time.time()
-        dtime = nowtime - starttime
-        try:
-            n_per_second = 1.0 * n / dtime
-        except ZeroDivisionError:
-            n_per_second = 0
-        if n_per_second != 0:
-            listlen = len(stuff)
-            seconds_per_n = 1.0 / n_per_second
-            time_guess = seconds_per_n * listlen
-            remaining_s = time_guess - dtime
-            remaining_minutes = int(remaining_s / 60)
-            remaining_s -= remaining_minutes * 60
-            print("Drawing pixel " + str(n) + " of " + str(listlen)
-                    + " (" + str(round(100.0 * n / listlen, 1)) + "%)"
-                    + " (ETA: " + str(remaining_minutes) + "m "
-                    + str(int(remaining_s)) + "s)")
-    n += 1
 
-    try:
-        (r, g, b) = colors[stuff['content'][x, z]]
-    except:
-        (r, g, b) = (255, 255, 200)
+c = stuff['content']
+dnd = stuff['dnd']
+h = stuff['height']
+c0 = c[1:,:-1]
+c1 = c[:-1,1:]
+c2 = c[1:, 1:]
+dnd0 = dnd[1:,:-1]
+dnd1 = dnd[:-1,1:]
+dnd2 = dnd[1:, 1:]
+h0 = h[1:,:-1]
+h1 = h[:-1,1:]
+h2 = h[1:, 1:]
+drop = (2*h0 - h1 - h2) * 12
+drop = numpy.clip(drop,-255,32)
 
-    dnd = stuff['dnd'][x, z]  # day/night differs?
-    if not dnd and not drawunderground:
-        if stuff['water'][x, z] > 0:  # water
-            (r, g, b) = colors[CONTENT_WATER]
-        else:
-            continue
+colors = numpy.array([(255,255,255),(255,255,255)]+[colors[c] for c in sorted(colors)],dtype = 'i2')
 
-    try:
-        # Comparing heights of a couple of adjacent blocks and changing
-        # brightness accordingly.
-        c = stuff['content'][x, z]
-        c1 = stuff['content'][x - 1, z]
-        c2 = stuff['content'][x, z + 1]
-        dnd1 = stuff['dnd'][x - 1, z]
-        dnd2 = stuff['dnd'][x, z + 1]
-        if not dnd:
-            d = -69
-        else:
-            y = stuff['height'][x, z]
-            y1 = stuff['height'][x - 1, z] if dnd1 else y
-            y2 = stuff['height'][x, z + 1] if dnd2 else y
-            d = ((y - y1) + (y - y2)) * 12
-    ##    elif not content_is_water(c1) and not content_is_water(c2) and \
-    ##        not content_is_water(c):
-    ##        count_height+=1
-    ##        y = stuff['height'][x, z]
-    ##        y1 = stuff['height'][x - 1, z] if dnd1 else y
-    ##        y2 = stuff['height'][x, z + 1] if dnd2 else y
-    ##        d = ((y - y1) + (y - y2)) * 12
-    ##    else:
-    ##        count_zero+=1
-    ##        d = 0
+impix = colors[stuff['content']]
+impix[1:,:-1] += drop[:,:,numpy.newaxis]
+impix = numpy.clip(impix,0,255)
+impix = numpy.array(impix,dtype = 'u1')
+im = Image.fromarray(impix,'RGB')
+im = im.transpose(Image.ROTATE_90)
 
-        if(d > 36):
-            d = 36
-
-        r = limit(r + d, 0, 255)
-        g = limit(g + d, 0, 255)
-        b = limit(b + d, 0, 255)
-    except:
-        pass
-
-
-    # Water
-    if(stuff['water'][x, z] > 0):
-        r = int(r * .15 + colors[2][0] * .85)
-        g = int(g * .15 + colors[2][1] * .85)
-        b = int(b * .15 + colors[2][2] * .85)
-
-    impix[x - border, h - 1 - z + border] = (r, g, b)
-
-
+border = 0
 if draworigin:
     draw.ellipse((minx * -16 - 5 + border, h - minz * -16 - 6 + border,
         minx * -16 + 5 + border, h - minz * -16 + 4 + border),
