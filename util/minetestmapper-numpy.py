@@ -154,7 +154,7 @@ path = None
 output = "map.png"
 border = 0
 scalecolor = "black"
-bgcolor = "white"
+bgcolor = ImageColor.getrgb("white")
 origincolor = "red"
 playercolor = "red"
 drawscale = False
@@ -311,7 +311,7 @@ print("Result image (w=" + str(w) + " h=" + str(h) + ") will be written to "
 
 im = Image.new("RGB", (w + border, h + border), bgcolor)
 draw = ImageDraw.Draw(im)
-impix = im.load()
+#impix = im.load()
 
 #stuff = {}
 stuff_height = numpy.zeros([w,h],dtype = 'i2')
@@ -650,29 +650,29 @@ count_zero=0
 
 c = stuff['content']
 dnd = stuff['dnd']
-h = stuff['height']
+hgh = stuff['height']
 c0 = c[1:,:-1]
 c1 = c[:-1,1:]
 c2 = c[1:, 1:]
 dnd0 = dnd[1:,:-1]
 dnd1 = dnd[:-1,1:]
 dnd2 = dnd[1:, 1:]
-h0 = h[1:,:-1]
-h1 = h[:-1,1:]
-h2 = h[1:, 1:]
+h0 = hgh[1:,:-1]
+h1 = hgh[:-1,1:]
+h2 = hgh[1:, 1:]
 drop = (2*h0 - h1 - h2) * 12
 drop = numpy.clip(drop,-255,32)
 
-colors = numpy.array([(255,255,255),(255,255,255)]+[colors[c] for c in sorted(colors)],dtype = 'i2')
+colors = numpy.array([bgcolor,bgcolor]+[colors[c] for c in sorted(colors)],dtype = 'i2')
 
-impix = colors[stuff['content']]
-impix[1:,:-1] += drop[:,:,numpy.newaxis]
-impix = numpy.clip(impix,0,255)
-impix = numpy.array(impix,dtype = 'u1')
-im = Image.fromarray(impix,'RGB')
-im = im.transpose(Image.ROTATE_90)
+pix = colors[stuff['content']]
+pix[1:,:-1] += drop[:,:,numpy.newaxis]
+pix = numpy.clip(pix,0,255)
+pix = numpy.array(pix,dtype = 'u1')
+impix = Image.fromarray(pix,'RGB')
+impix = impix.transpose(Image.ROTATE_90)
+im.paste(impix,(border,border))
 
-border = 0
 if draworigin:
     draw.ellipse((minx * -16 - 5 + border, h - minz * -16 - 6 + border,
         minx * -16 + 5 + border, h - minz * -16 + 4 + border),
