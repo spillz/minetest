@@ -126,6 +126,8 @@ def parse_args():
     parser.add_argument('--draworigin',action='store_const', const = True, default = False)
     parser.add_argument('--drawunderground',action = 'store_const', const = True, default = False)
     parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes)')
+    parser.add_argument('--maxheight', type = int, metavar = ('YMAX'),help = 'don\'t draw above height YMAX')
+    parser.add_argument('--minheight', type = int, metavar = ('YMIN'),help = 'don\'t draw below height YMIN')
     parser.add_argument('world_dir')
     parser.add_argument('output',nargs='?',default='map.png')
     args = parser.parse_args()
@@ -266,7 +268,7 @@ def read_content(mapdata, version, datapos=None):
         raise Exception("Unsupported map format: " + str(version))
 
 
-def read_mapdata(mapdata, version, ypos, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air):
+def read_mapdata(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air):
     if(len(mapdata) < 4096):
         print("bad: " + xhex + "/" + zhex + "/" + yhex + " " + \
             str(len(mapdata)))
@@ -287,7 +289,7 @@ def read_mapdata(mapdata, version, ypos, plist, cdata, hdata, dnddata, day_night
 #        dnddata[po] = day_night_differs
 #        plist = plist[po]
 
-        y=15
+        y=maxy
         while len(plist)>0 and y>=0:
             content = mapdata[y][plist]
 #            content = id_func(mapdata[y][plist])
@@ -349,8 +351,10 @@ def read_map_data(args,cur,map_info,str_to_uid,xlist,zlist,minx,maxx,minz,maxz):
         sectortype = ""
 
         if cur:
-            psmin = getBlockAsInteger((xpos, -2048, zpos))
-            psmax = getBlockAsInteger((xpos, 2047, zpos))
+            ymin = -2048 if args.minheight is None else args.minheight/16+1
+            ymax = 2047 if args.maxheight is None else args.maxheight/16+1
+            psmin = getBlockAsInteger((xpos, ymin, zpos))
+            psmax = getBlockAsInteger((xpos, ymax, zpos))
             cur.execute("SELECT `pos` FROM `blocks` WHERE `pos`>=? AND `pos`<=? AND (`pos` - ?) % 4096 = 0", (psmin, psmax, psmin))
             while True:
                 r = cur.fetchone()
@@ -534,7 +538,12 @@ def read_map_data(args,cur,map_info,str_to_uid,xlist,zlist,minx,maxx,minz,maxz):
                         readU16(f)
                         readS32(f)
                         readS32(f)
-                plist = read_mapdata(mapdata, version, ypos, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air)
+                maxy = 15
+                if args.maxheight is not None:
+                    if ypos*16 + 15 > args.maxheight:
+                        maxy = args.maxheight - ypos*16
+                if maxy>=0:
+                    plist = read_mapdata(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air)
                 # After finding all the pixels in the sector, we can move on to
                 # the next sector without having to continue the Y axis.
                 if len(plist) == 0 or ypos==ylist[0]:
