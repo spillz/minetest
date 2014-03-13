@@ -19,7 +19,7 @@
 #                use numpy for speed boost and reduced memory usage
 
 # Requires Python Imaging Library: http://www.pythonware.com/products/pil/
-
+# Requires Numpy: http://www.scipy.org
 
 import zlib
 import os
@@ -85,6 +85,14 @@ def int_to_hex4(i):
     else:
         return "%04X" % i
 
+
+#def signedToUnsigned(i, max_positive):
+#    if i >= 0:
+#        return i
+#    else:
+#        return i + 2*max_positive
+#def getBlockAsInteger(p):
+#    return signedToUnsigned(p[2],2048)*16777216 + signedToUnsigned(p[1],2048)*4096 + signedToUnsigned(p[0],2048)
 
 def getBlockAsInteger(p):
     return p[2]*16777216 + p[1]*4096 + p[0]
@@ -152,10 +160,10 @@ def read_content(mapdata, version, datapos=None):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='A mapper for minetest')
-    parser.add_argument('--bgcolor', nargs=1, default='black', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the background color (e.g. white or "#FFFFFF")')
-    parser.add_argument('--scalecolor', nargs=1, default='white', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the ruler and text color for the scale')
-    parser.add_argument('--origincolor', nargs=1, default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for the map origin')
-    parser.add_argument('--playercolor', nargs=1, default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for player markers')
+    parser.add_argument('--bgcolor', default='black', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the background color (e.g. white or "#FFFFFF")')
+    parser.add_argument('--scalecolor', default='white', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the ruler and text color for the scale')
+    parser.add_argument('--origincolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for the map origin')
+    parser.add_argument('--playercolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for player markers')
     parser.add_argument('--drawscale',action='store_const', const = True, default=False, help = 'draw a scale on the border of the map')
     parser.add_argument('--drawplayers',action='store_const', const = True, default = False, help = 'draw markers for players')
     parser.add_argument('--draworigin',action='store_const', const = True, default = False, help = 'draw the position of the origin (0,0)')
@@ -163,9 +171,17 @@ def parse_args():
     parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes)')
     parser.add_argument('--maxheight', type = int, metavar = ('YMAX'),help = 'don\'t draw above height YMAX')
     parser.add_argument('--minheight', type = int, metavar = ('YMIN'),help = 'don\'t draw below height YMIN')
+    parser.add_argument('--facing', type = str, choices = ('up','down','north','south','east','west'),default='down',help = 'direction to face when drawing')
     parser.add_argument('world_dir',help='the path to the world you want to map')
     parser.add_argument('output',nargs='?',default='map.png',help='the output filename')
     args = parser.parse_args()
+    if args.world_dir is None:
+        print("Please select world path (eg. -i ../worlds/yourworld) (or use --help)")
+        sys.exit(1)
+    if not os.path.isdir(args.world_dir):
+        print ("World does not exist")
+        sys.exit(1)
+    args.world_dir = os.path.abspath(args.world_dir) + os.path.sep
     return args
 
 # Load color information for the blocks.
@@ -207,11 +223,12 @@ def load_colors(fname = "colors.txt"):
 #print("colors: "+repr(colors))
 #sys.exit(1)
 
-def legacy_fetch_sector_data(args, sector1, sector2):
+def legacy_fetch_sector_data(args, sectortype, sector_data, ypos):
+    yhex = int_to_hex4(ypos)
     if sectortype == "old":
-        filename = args.world_dir + "sectors/" + sector1 + "/" + yhex.lower()
+        filename = args.world_dir + "sectors/" + sector_data[0] + "/" + yhex.lower()
     else:
-        filename = args.world_dir + "sectors2/" + sector2 + "/" + yhex.lower()
+        filename = args.world_dir + "sectors2/" + sector_data[1] + "/" + yhex.lower()
     return file(filename, "rb")
 
 
@@ -239,7 +256,15 @@ def legacy_sector_scan(args,sectors_xmin, sector_xmax, sector_zmin, sector_zmax)
             xlist.append(x)
             zlist.append(z)
 
-def legacy_fetch_ylist(args,sector1,ylist):
+def legacy_fetch_ylist(args,xpos,zpos,ylist):
+    sectortype =""
+    xhex = int_to_hex3(xpos)
+    zhex = int_to_hex3(zpos)
+    xhex4 = int_to_hex4(xpos)
+    zhex4 = int_to_hex4(zpos)
+
+    sector1 = xhex4.lower() + zhex4.lower()
+    sector2 = xhex.lower() + "/" + zhex.lower()
     try:
         for filename in os.listdir(args.world_dir + "sectors/" + sector1):
             if(filename != "meta"):
@@ -247,33 +272,74 @@ def legacy_fetch_ylist(args,sector1,ylist):
                 if(pos > 32767):
                     pos -= 65536
                 ylist.append(pos)
+
+        if len(ylist)>0:
+            sectortype = "old"
+
+        if sectortype == "":
+            try:
+                for filename in os.listdir(args.world_dir + "sectors2/" + sector2):
+                    if(filename != "meta"):
+                        pos = int(filename, 16)
+                        if(pos > 32767):
+                            pos -= 65536
+                        ylist.append(pos)
+                        sectortype = "new"
+            except OSError:
+                pass
+
     except OSError:
         pass
+    return sectortype
 
 
-def map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air):
+def find(arr,value,axis=-1):
+    return ((arr==value).cumsum(axis=axis)==0).sum(axis=axis)
+
+count = 0
+
+def map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order):
+    global count
     if(len(mapdata) < 4096):
         print("bad: " + xhex + "/" + zhex + "/" + yhex + " " + \
             str(len(mapdata)))
     else:
+#        if count>2:
+#            return
         chunkypos = ypos * 16
         mapdata = mapdata[:4096]
+#        if face_swap_order[0]<0:
+#            mapdata = mapdata[::face_swap_order[0]]
         mapdata = id_map[mapdata]
         if (mapdata==ignore).all():
             return plist
-        mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),1,0)
-        mapdata = numpy.swapaxes(mapdata,1,2).reshape(16,256)
-#        content = mapdata[::-1,plist]
-#        opaques = ~( (content == ignore) | (content == air) )
-#        h = chunkypos + 15 - argmax(opaques,axis=0)
-#        po = (hdata[plist]>=0)
-#        hdata[po] = chunkypos + 15 - argmax(opaques,axis=0)
-#        cdata[po] = content[po]
-#        dnddata[po] = day_night_differs
-#        plist = plist[po]
-
+        count += 1
+#        if False:
+#            mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),0,2)
+#            mapdata = numpy.swapaxes(mapdata,1,2).reshape(256,16)
+#            content = mapdata[plist]
+#            opaques = ~( (content == ignore) | (content == air) )
+#            h = find(opaques,True,1)
+#            po = (h<16)
+#            hpo = h[po]
+#            hdata[po] = chunkypos + 16 - hpo
+#            cdata[po] = content[po][:,hpo]
+#            dnddata[po] = day_night_differs
+#            plist = plist[~po]
+#        else:
+        (swap1a,swap1b),(swap2a,swap2b) = face_swap_order[1:]
+#        mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),1,0)
+#        mapdata = numpy.swapaxes(mapdata,1,2).reshape(16,256)
+        mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),swap1a,swap1b)
+        mapdata = numpy.swapaxes(mapdata,swap2a,swap2b).reshape(16,256)
+        if face_swap_order[0]>0:
+            r = range(maxy,-1,-1)
+        else:
+            r = range(maxy,16,1)
         y=maxy
-        while len(plist)>0 and y>=0:
+        for y in r:
+            if len(plist)==0:
+                break
             content = mapdata[y][plist]
 #            content = id_func(mapdata[y][plist])
 #            watercontent = content_is_water(content)
@@ -286,7 +352,6 @@ def map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_ni
             dnddata[po] = day_night_differs
             plist = plist[~opaques]
             y-=1
-#        cdata[:] = id_map(cdata)
     return plist
 
 
@@ -302,6 +367,14 @@ class World:
         self.maxz = None
         self.mapinfo = None
 
+    def facing(self,x,y,z):
+        if self.args.facing in ['up','down']:
+            return x,y,z
+        if self.args.facing in ['east','west']:
+            return z,x,y
+        if self.args.facing in ['north','south']:
+            return x,z,y
+
     def generate_sector_list(self):
         '''
         List all sectors to memory and calculate the width and heigth of the
@@ -309,10 +382,13 @@ class World:
         '''
         args = self.args
         sector_xmin,sector_xmax,sector_zmin,sector_zmax = numpy.array(args.region)/16
+        sector_ymin = args.minheight/16
+        sector_ymax = args.maxheight/16
         xlist = []
         zlist = []
         conn = None
         cur = None
+        self.lookup={}
         if os.path.exists(args.world_dir + "map.sqlite"):
             import sqlite3
             conn = sqlite3.connect(args.world_dir + "map.sqlite")
@@ -320,6 +396,7 @@ class World:
             self.cur = cur
 
             cur.execute("SELECT `pos` FROM `blocks`")
+            #cur.execute("SELECT `pos`,`data` FROM `blocks`")
             while True:
                 r = cur.fetchone()
                 if not r:
@@ -331,19 +408,34 @@ class World:
                     continue
                 if z < sector_zmin or z > sector_zmax:
                     continue
+                if y < sector_ymin or y > sector_ymax:
+                    continue
 
+                x, y, z = self.facing(x, y, z)
+                try:
+                    self.lookup[(x,z)].append((y,r[0]))
+                except KeyError:
+                    self.lookup[(x,z)]=[(y,r[0])]
                 xlist.append(x)
                 zlist.append(z)
         else:
             legacy_sector_scan(args, sectors_xmin, sector_xmax, sector_zmin, sector_zmax)
 
-        # Get rid of duplicates
         if len(xlist)>0:
+            # Get rid of duplicates
             self.xlist, self.zlist = zip(*sorted(set(zip(xlist, zlist))))
+
             self.minx = min(xlist)
             self.minz = min(zlist)
             self.maxx = max(xlist)
             self.maxz = max(zlist)
+
+            x0,x1,z0,z1 = numpy.array(args.region)
+            y0 = args.minheight
+            y1 = args.maxheight
+            self.minypos = self.facing(int(x0),int(y0),int(z0))[1]
+            self.maxypos = self.facing(int(x1),int(y1),int(z1))[1]
+
             self.w = (self.maxx - self.minx) * 16 + 16
             self.h = (self.maxz - self.minz) * 16 + 16
 
@@ -360,6 +452,18 @@ class World:
         w = self.w
         h = self.h
 
+        #x,y,z becomes y,x,z for up/down
+        #      becomes x,z,y for east/west
+        #      becomes z,x,y for north/south
+        if args.facing in ['up','down']:
+            face_swap_order = [1,(1,0),(1,2)]
+        elif args.facing in ['east','west']:
+            face_swap_order = [1,(2,0),(2,1)] ##might be (2,1) for the third tuple item
+        elif args.facing in ['north','south']:
+            face_swap_order = [1,(0,0),(1,2)]
+        if args.facing in ['up','east','north']:
+            face_swap_order[0] = -1
+
         mapinfo = {
             'height':numpy.zeros([w,h],dtype = 'i2'),
             'content':numpy.zeros([w,h],dtype='u2'),
@@ -367,8 +471,8 @@ class World:
             'dnd':numpy.zeros([w,h],dtype=bool)}
 
 
-        unknown_node_names = []
-        unknown_node_ids = []
+        unknown_node_names = set()
+        unknown_node_ids = set()
 
         starttime = time.time()
         # Go through all sectors.
@@ -396,51 +500,25 @@ class World:
             xpos = xlist[n]
             zpos = zlist[n]
 
-            xhex = int_to_hex3(xpos)
-            zhex = int_to_hex3(zpos)
-            xhex4 = int_to_hex4(xpos)
-            zhex4 = int_to_hex4(zpos)
-
-            sector1 = xhex4.lower() + zhex4.lower()
-            sector2 = xhex.lower() + "/" + zhex.lower()
-
             ylist = []
 
             sectortype = ""
 
             if cur:
-                ymin = -2048 if args.minheight is None else args.minheight/16+1
-                ymax = 2047 if args.maxheight is None else args.maxheight/16+1
-                psmin = getBlockAsInteger((xpos, ymin, zpos))
-                psmax = getBlockAsInteger((xpos, ymax, zpos))
-                cur.execute("SELECT `pos` FROM `blocks` WHERE `pos`>=? AND `pos`<=? AND (`pos` - ?) % 4096 = 0", (psmin, psmax, psmin))
-                while True:
-                    r = cur.fetchone()
-                    if not r:
-                        break
-                    pos = getIntegerAsBlock(r[0])[1]
-                    ylist.append(pos)
-                    sectortype = "sqlite"
+                ymin = self.minypos/16 #-2048 if args.minheight is None else args.minheight/16+1
+                ymax = self.maxypos/16+1 #2047 if args.maxheight is None else args.maxheight/16+1
+                for k in self.lookup[(xpos,zpos)]:
+                    ylist.append(k)
+                sectortype = "sqlite"
             else:
-                sectortype = "old"
-                ylist = legacy_fetch_ylist(args,sector1)
-
-            if sectortype == "":
-                try:
-                    for filename in os.listdir(args.world_dir + "sectors2/" + sector2):
-                        if(filename != "meta"):
-                            pos = int(filename, 16)
-                            if(pos > 32767):
-                                pos -= 65536
-                            ylist.append(pos)
-                            sectortype = "new"
-                except OSError:
-                    pass
+                sectortype,sector_data = legacy_fetch_ylist(args,xpos,zpos,ylist)
 
             if sectortype == "":
                 continue
 
             ylist.sort()
+            if face_swap_order[0]>0:
+                ylist.reverse()
 
             # Create map related info for the sector that will be filled as we seek down the y axis
             cdata = numpy.zeros(256,dtype='i4')
@@ -450,21 +528,19 @@ class World:
             plist = numpy.arange(256)
 
             # Go through the Y axis from top to bottom.
-            for ypos in reversed(ylist):
+            for ypos,ps in ylist:
                 try:
-                    #print("("+str(xpos)+","+str(ypos)+","+str(zpos)+")")
-
-                    yhex = int_to_hex4(ypos)
 
                     if sectortype == "sqlite":
-                        ps = getBlockAsInteger((xpos, ypos, zpos))
+                        ps1 = getBlockAsInteger((xpos, ypos, zpos))
                         cur.execute("SELECT `data` FROM `blocks` WHERE `pos`==? LIMIT 1", (ps,))
                         r = cur.fetchone()
                         if not r:
                             continue
                         f = cStringIO.StringIO(r[0])
+#                        f = cStringIO.StringIO(blob)
                     else:
-                        f = legacy_fetch_sector_data(args, sector1, sector2)
+                        f = legacy_fetch_sector_data(args, sectortype, sector_data, ypos)
 
                     # Let's just memorize these even though it's not really necessary.
                     version = readU8(f)
@@ -495,7 +571,6 @@ class World:
                         mapdata = numpy.fromstring(s,">u2")
                     except:
                         mapdata = []
-        #                mapdata2 = numpy.array([])
 
                     # Reuse the unused tail of the file
                     f.close();
@@ -567,6 +642,8 @@ class World:
                                 id_to_name[node_id] = str_to_uid[name]
                             except:
                                 ##TODO: Add to list of unknown colors
+                                unknown_node_names.add(name)
+                                unknown_node_ids.add(node_id)
                                 id_to_name[node_id] = 0
                             if name == 'air':
                                 air = id_to_name[node_id]
@@ -586,16 +663,24 @@ class World:
                             readS32(f)
                             readS32(f)
                     maxy = 15
-                    if args.maxheight is not None:
-                        if ypos*16 + 15 > args.maxheight:
-                            maxy = args.maxheight - ypos*16
+                    ##facing in down,south,west use maxheight, otherwise use minheight
+                    if face_swap_order[0]>0:
+                        if ypos*16 + 15 > self.maxypos:
+                            maxy = self.maxypos - ypos*16
+                    else:
+                        if ypos*16 + 15 < self.minypos:
+                            maxy = ypos*16 - self.minypos
                     if maxy>=0:
-                        plist = map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air)
+                        plist = map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order)
                     # After finding all the pixels in the sector, we can move on to
                     # the next sector without having to continue the Y axis.
-                    if len(plist) == 0 or ypos==ylist[0]:
+                    if len(plist) == 0 or ypos==ylist[-1][0]:
                         chunkxpos = (xpos-minx)*16
                         chunkzpos = (zpos-minz)*16
+                        if True: #face_swap_order[0]<0:
+                            pass
+                            #chunkxpos = (maxx-minx)*16 - chunkxpos #-16?
+                            #chunkzpos = (maxz-minz)*16 - chunkzpos #-16?
                         pos = (slice(chunkxpos,chunkxpos+16),slice(chunkzpos,chunkzpos+16))
                         mapinfo['height'][pos] = hdata.reshape(16,16)
                         mapinfo['content'][pos] = cdata.reshape(16,16)
@@ -604,6 +689,7 @@ class World:
                         break
                 except Exception as e:
                     print("Error at ("+str(xpos)+","+str(ypos)+","+str(zpos)+"): "+str(e))
+                    traceback.print_exc()
                     sys.stdout.write("Block data: ")
                     for c in r[0]:
                         sys.stdout.write("%2.2x "%ord(c))
@@ -624,7 +710,7 @@ class World:
             for node_id in unknown_node_ids:
                 sys.stdout.write(" "+str(hex(node_id)))
             sys.stdout.write(os.linesep)
-
+#        print str_to_uid
 
 def draw_image(world,uid_to_color):
     # Drawing the picture
@@ -643,6 +729,11 @@ def draw_image(world,uid_to_color):
     im = Image.new("RGB", (w + border, h + border), args.bgcolor)
     draw = ImageDraw.Draw(im)
 
+    if args.facing in ['west','south']:
+        stuff['content'] = stuff['content'][::-1,:]
+        stuff['dnd'] = stuff['dnd'][::-1,:]
+        stuff['height'] = stuff['height'][::-1,:]
+        stuff['water'] = stuff['water'][::-1,:]
 
     count_dnd=0
     count_height=0
@@ -661,7 +752,11 @@ def draw_image(world,uid_to_color):
     h1 = hgh[:-1,1:]
     h2 = hgh[1:, 1:]
     drop = (2*h0 - h1 - h2) * 12
-    drop = numpy.clip(drop,-255,32)
+#    drop = numpy.clip(drop,-255,32)
+    drop = numpy.clip(drop,-32,32)
+    if args.facing not in ['up','down']:
+        drop+= (stuff['height'].max() - stuff['height'])[1:,:-1]/3
+        drop= numpy.clip(drop,-32,32)
 
     colors = numpy.array([args.bgcolor,args.bgcolor]+[uid_to_color[c] for c in sorted(uid_to_color)],dtype = 'i2')
 
@@ -674,21 +769,40 @@ def draw_image(world,uid_to_color):
     im.paste(impix,(border,border))
 
     if args.draworigin:
-        draw.ellipse((minx * -16 - 5 + border, h - minz * -16 - 6 + border,
-            minx * -16 + 5 + border, h - minz * -16 + 4 + border),
-            outline=args.origincolor)
+        if args.facing in ['south','west']:
+            draw.ellipse((w - (minx * -16 - 5 + border), h - minz * -16 - 6 + border,
+                w - (minx * -16 + 5 + border), h - minz * -16 + 4 + border),
+                outline=args.origincolor)
+        else:
+            draw.ellipse((minx * -16 - 5 + border, h - minz * -16 - 6 + border,
+                minx * -16 + 5 + border, h - minz * -16 + 4 + border),
+                outline=args.origincolor)
 
     font = ImageFont.load_default()
 
     if args.drawscale:
-        draw.text((24, 0), "X", font=font, fill=args.scalecolor)
-        draw.text((2, 24), "Z", font=font, fill=args.scalecolor)
+        if args.facing in ['up','down']:
+            draw.text((24, 0), "X", font=font, fill=args.scalecolor)
+            draw.text((2, 24), "Z", font=font, fill=args.scalecolor)
+        elif args.facing in ['east','west']:
+            draw.text((24, 0), "Z", font=font, fill=args.scalecolor)
+            draw.text((2, 24), "Y", font=font, fill=args.scalecolor)
+        elif args.facing in ['north','south']:
+            draw.text((24, 0), "X", font=font, fill=args.scalecolor)
+            draw.text((2, 24), "Y", font=font, fill=args.scalecolor)
 
-        for n in range(int(minx / -4) * -4, maxx, 4):
-            draw.text((minx * -16 + n * 16 + 2 + border, 0), str(n * 16),
-                font=font, fill=args.scalecolor)
-            draw.line((minx * -16 + n * 16 + border, 0,
-                minx * -16 + n * 16 + border, border - 1), fill=args.scalecolor)
+        if args.facing in ['west','south']:
+            for n in range(int(minx / -4) * -4, maxx, 4):
+                draw.text((minx * -16 + n * 16 + 2 + border, 0), str(maxx*16 - n * 16),
+                    font=font, fill=args.scalecolor)
+                draw.line((minx * -16 + n * 16 + border, 0,
+                    minx * -16 + n * 16 + border, border - 1), fill=args.scalecolor)
+        else:
+            for n in range(int(minx / -4) * -4, maxx, 4):
+                draw.text((minx * -16 + n * 16 + 2 + border, 0), str(n * 16),
+                    font=font, fill=args.scalecolor)
+                draw.line((minx * -16 + n * 16 + border, 0,
+                    minx * -16 + n * 16 + border, border - 1), fill=args.scalecolor)
 
         for n in range(int(maxz / 4) * 4, minz, -4):
             draw.text((2, h - 1 - (n * 16 - minz * 16) + border), str(n * 16),
@@ -712,8 +826,14 @@ def draw_image(world,uid_to_color):
                         position = string.split(p[2][1:-1], ",")
                         print(filename + ": position = " + p[2])
                 if len(name) > 0 and len(position) == 3:
-                    x = (int(float(position[0]) / 10 - minx * 16))
-                    z = int(h - (float(position[2]) / 10 - minz * 16))
+                    x,y,z = [int(float(p)/10) for p in position]
+                    x,y,z = world.facing(x,y,z)
+                    if args.facing in ['south','west']:
+                        x = w - x - minx * 16
+                        z = h - z - minz * 16
+                    else:
+                        x = x - minx * 16
+                        z = h - z - minz * 16
                     draw.ellipse((x - 2 + border, z - 2 + border,
                         x + 2 + border, z + 2 + border), outline=args.playercolor)
                     draw.text((x + 2 + border, z + 2 + border), name,
@@ -728,21 +848,13 @@ def draw_image(world,uid_to_color):
 def main():
     args = parse_args()
 
-    if args.world_dir is None:
-        print("Please select world path (eg. -i ../worlds/yourworld) (or use --help)")
-        sys.exit(1)
-    if not os.path.isdir(args.world_dir):
-        print ("World does not exist")
-        sys.exit(1)
-    args.world_dir = os.path.abspath(args.world_dir) + os.path.sep
-
     uid_to_color, str_to_uid = load_colors()
 
     world = World(args)
 
     world.generate_sector_list()
 
-    if len(world.xlist) == 0 or len(world.zlist) == 0:
+    if len(world.xlist) == 0:
         print("World data does not exist.")
         sys.exit(1)
 
