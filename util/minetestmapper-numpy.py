@@ -164,6 +164,7 @@ def parse_args():
     parser.add_argument('--scalecolor', default='white', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the ruler and text color for the scale')
     parser.add_argument('--origincolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for the map origin')
     parser.add_argument('--playercolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for player markers')
+    parser.add_argument('--fogcolor', default='lightblue', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for fog')
     parser.add_argument('--drawscale',action='store_const', const = True, default=False, help = 'draw a scale on the border of the map')
     parser.add_argument('--drawplayers',action='store_const', const = True, default = False, help = 'draw markers for players')
     parser.add_argument('--draworigin',action='store_const', const = True, default = False, help = 'draw the position of the origin (0,0)')
@@ -172,6 +173,7 @@ def parse_args():
     parser.add_argument('--maxheight', type = int, metavar = ('YMAX'), default = 500, help = 'don\'t draw above height YMAX')
     parser.add_argument('--minheight', type = int, metavar = ('YMIN'), default = -500, help = 'don\'t draw below height YMIN')
     parser.add_argument('--facing', type = str, choices = ('up','down','north','south','east','west'),default='down',help = 'direction to face when drawing (north, south, east or west will draw a cross-section)')
+    parser.add_argument('--fog', type = float, metavar = ('FOGSTRENGTH'), default = 0.0, help = 'use fog strength of FOGSTRENGTH (0.0 by default, max of 1.0)')
     parser.add_argument('world_dir',help='the path to the world you want to map')
     parser.add_argument('output',nargs='?',default='map.png',help='the output filename')
     args = parser.parse_args()
@@ -662,12 +664,13 @@ class World:
                             readU16(f)
                             readS32(f)
                             readS32(f)
-                    maxy = 15
                     ##facing in down,south,west use maxheight, otherwise use minheight
                     if face_swap_order[0]>0:
+                        maxy = 15
                         if ypos*16 + 15 > self.maxypos:
                             maxy = self.maxypos - ypos*16
                     else:
+                        maxy = 0
                         if ypos*16 + 15 < self.minypos:
                             maxy = ypos*16 - self.minypos
                     if maxy>=0:
@@ -754,15 +757,21 @@ def draw_image(world,uid_to_color):
     drop = (2*h0 - h1 - h2) * 12
 #    drop = numpy.clip(drop,-255,32)
     drop = numpy.clip(drop,-32,32)
-    if args.facing not in ['up','down']:
-        drop+= (stuff['height'].max() - stuff['height'])[1:,:-1]/3
-        drop= numpy.clip(drop,-32,32)
+    if args.fog>0:
+        fogstrength = 1.0* (stuff['height']-stuff['height'].min())/(stuff['height'].max()-stuff['height'].min())
+        if args.facing in ['down','south','west']:
+            fogstrength = 1-fogstrength
+        fogstrength = args.fog * fogstrength
+        fogstrength = fogstrength[:,:,numpy.newaxis]
 
     colors = numpy.array([args.bgcolor,args.bgcolor]+[uid_to_color[c] for c in sorted(uid_to_color)],dtype = 'i2')
 
     pix = colors[stuff['content']]
     pix[1:,:-1] += drop[:,:,numpy.newaxis]
     pix = numpy.clip(pix,0,255)
+    if args.fog>0:
+        pix = args.fogcolor*fogstrength + pix*(1-fogstrength)
+        pix = numpy.clip(pix,0,255)
     pix = numpy.array(pix,dtype = 'u1')
     impix = Image.fromarray(pix,'RGB')
     impix = impix.transpose(Image.ROTATE_90)
