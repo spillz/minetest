@@ -755,6 +755,8 @@ def draw_image(world,uid_to_color):
     h1 = hgh[:-1,1:]
     h2 = hgh[1:, 1:]
     drop = (2*h0 - h1 - h2) * 12
+    if args.facing in ['east','north']:
+        drop = -drop
 #    drop = numpy.clip(drop,-255,32)
     drop = numpy.clip(drop,-32,32)
     if args.fog>0:
