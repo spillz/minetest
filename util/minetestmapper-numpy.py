@@ -739,7 +739,7 @@ def draw_image(world,uid_to_color):
         stuff['height'] = stuff['height'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
         stuff['water'] = stuff['water'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
 
-    if args.facing in ['west','south']:
+    if args.facing in ['east','north','up']:
         stuff['content'] = stuff['content'][::-1,:]
         stuff['dnd'] = stuff['dnd'][::-1,:]
         stuff['height'] = stuff['height'][::-1,:]
@@ -762,7 +762,7 @@ def draw_image(world,uid_to_color):
     h1 = hgh[:-1,1:]
     h2 = hgh[1:, 1:]
     drop = (2*h0 - h1 - h2) * 12
-    if args.facing in ['east','north']:
+    if args.facing in ['east','north','up']:
         drop = -drop
 #    drop = numpy.clip(drop,-255,32)
     drop = numpy.clip(drop,-32,32)
@@ -787,13 +787,13 @@ def draw_image(world,uid_to_color):
     im.paste(impix,(border,border))
 
     if args.draworigin:
-        if args.facing in ['south','west']:
-            draw.ellipse(((w - (minx * -16 - 5 + border))*args.pixelspernode, (h - minz * -16 - 6 + border)*args.pixelspernode,
-                (w - (minx * -16 + 5 + border))*args.pixelspernode, (h - minz * -16 + 4 + border))*args.pixelspernode,
+        if args.facing in ['east','north','up']:
+            draw.ellipse(((w - (minx * -16 - 5))*args.pixelspernode + border, (h - minz * -16 - 6)*args.pixelspernode + border,
+                (w - (minx * -16 + 5))*args.pixelspernode + border, (h - minz * -16 + 4))*args.pixelspernode + border,
                 outline=args.origincolor)
         else:
-            draw.ellipse(((minx * -16 - 5 + border)*args.pixelspernode, (h - minz * -16 - 6 + border)*args.pixelspernode,
-                (minx * -16 + 5 + border)*args.pixelspernode, (h - minz * -16 + 4 + border)*args.pixelspernode),
+            draw.ellipse(((minx * -16 - 5)*args.pixelspernode + border, (h - minz * -16 - 6)*args.pixelspernode + border,
+                (minx * -16 + 5)*args.pixelspernode + border, (h - minz * -16 + 4)*args.pixelspernode + border),
                 outline=args.origincolor)
 
     font = ImageFont.load_default()
@@ -809,24 +809,24 @@ def draw_image(world,uid_to_color):
             draw.text((24, 0), "X", font=font, fill=args.scalecolor)
             draw.text((2, 24), "Y", font=font, fill=args.scalecolor)
 
-        if args.facing in ['west','south']:
-            for n in range(int(minx / -4) * -4, maxx, 4):
-                draw.text(((minx * -16 + n * 16 + 2 + border)*args.pixelspernode, 0), str(maxx*16 - n * 16),
+        if args.facing in ['east','north','up']:
+            for n in range(int(minx / -4) * -4, maxx+1, 4):
+                draw.text(((w - (minx * -16 + n * 16))*args.pixelspernode + border + 2, 0), str(n * 16),
                     font=font, fill=args.scalecolor)
-                draw.line(((minx * -16 + n * 16 + border)*args.pixelspernode, 0,
-                    (minx * -16 + n * 16 + border)*args.pixelspernode, border - 1), fill=args.scalecolor)
+                draw.line(((w - (minx * -16 + n * 16))*args.pixelspernode + border, 0,
+                    (w - (minx * -16 + n * 16))*args.pixelspernode + border, border - 1), fill=args.scalecolor)
         else:
             for n in range(int(minx / -4) * -4, maxx, 4):
-                draw.text(((minx * -16 + n * 16 + 2 + border)*args.pixelspernode, 0), str(n * 16),
+                draw.text(((minx * -16 + n * 16)*args.pixelspernode + border + 2 , 0), str(n * 16),
                     font=font, fill=args.scalecolor)
-                draw.line(((minx * -16 + n * 16 + border)*args.pixelspernode, 0,
-                    (minx * -16 + n * 16 + border)*args.pixelspernode, border - 1), fill=args.scalecolor)
+                draw.line(((minx * -16 + n * 16)*args.pixelspernode + border, 0,
+                    (minx * -16 + n * 16)*args.pixelspernode + border, border - 1), fill=args.scalecolor)
 
         for n in range(int(maxz / 4) * 4, minz, -4):
-            draw.text((2, (h - 1 - (n * 16 - minz * 16) + border)*args.pixelspernode), str(n * 16),
+            draw.text((2, (h - 1 - (n * 16 - minz * 16))*args.pixelspernode + border), str(n * 16),
                 font=font, fill=args.scalecolor)
-            draw.line((0, (h - 1 - (n * 16 - minz * 16) + border)*args.pixelspernode, border - 1,
-                (h - 1 - (n * 16 - minz * 16) + border)*args.pixelspernode), fill=args.scalecolor)
+            draw.line((0, (h - 1 - (n * 16 - minz * 16))*args.pixelspernode + border, border - 1,
+                (h - 1 - (n * 16 - minz * 16))*args.pixelspernode + border), fill=args.scalecolor)
 
     if args.drawplayers:
         try:
@@ -846,15 +846,15 @@ def draw_image(world,uid_to_color):
                 if len(name) > 0 and len(position) == 3:
                     x,y,z = [int(float(p)/10) for p in position]
                     x,y,z = world.facing(x,y,z)
-                    if args.facing in ['south','west']:
+                    if args.facing in ['east','north','up']:
                         x = (w - x - minx * 16)*args.pixelspernode
                         z = (h - z - minz * 16)*args.pixelspernode
                     else:
                         x = (x - minx * 16)*args.pixelspernode
                         z = (h - z - minz * 16)*args.pixelspernode
-                    draw.ellipse(((x - 2 + border)*args.pixelspernode, (z - 2 + border)*args.pixelspernode,
-                        (x + 2 + border)*args.pixelspernode, (z + 2 + border)*args.pixelspernode), outline=args.playercolor)
-                    draw.text(((x + 2 + border)*args.pixelspernode, (z + 2 + border)*args.pixelspernode), name,
+                    draw.ellipse(((x - 2)*args.pixelspernode + border, (z - 2)*args.pixelspernode + border,
+                        (x + 2)*args.pixelspernode + border, (z + 2)*args.pixelspernode + border), outline=args.playercolor)
+                    draw.text(((x + 2)*args.pixelspernode + border, (z + 2)*args.pixelspernode + border), name,
                         font=font, fill=args.playercolor)
                 f.close()
         except OSError:
