@@ -523,9 +523,13 @@ class World:
             if face_swap_order[0]>0:
                 ylist.reverse()
 
+            if args.facing in ['south','west','down']:
+                miny = self.minypos-1
+            else:
+                miny = self.maxypos+1
             # Create map related info for the sector that will be filled as we seek down the y axis
             cdata = numpy.zeros(256,dtype='i4')
-            hdata = numpy.zeros(256,dtype='i4')
+            hdata = numpy.ones(256,dtype='i4')*miny
             wdata = numpy.zeros(256,dtype='i4')
             dnddata = numpy.zeros(256,dtype=bool)
             plist = numpy.arange(256)
