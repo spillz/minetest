@@ -169,9 +169,10 @@ def parse_args():
     parser.add_argument('--drawplayers',action='store_const', const = True, default = False, help = 'draw markers for players')
     parser.add_argument('--draworigin',action='store_const', const = True, default = False, help = 'draw the position of the origin (0,0)')
     parser.add_argument('--drawunderground',action = 'store_const', const = True, default = False, help = 'draw underground areas (NOT IMPLEMENTED!)')
-    parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes)')
-    parser.add_argument('--maxheight', type = int, metavar = ('YMAX'), default = 500, help = 'don\'t draw above height YMAX')
-    parser.add_argument('--minheight', type = int, metavar = ('YMIN'), default = -500, help = 'don\'t draw below height YMIN')
+    parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes, default = -2000 2000 -2000 2000)')
+    parser.add_argument('--maxheight', type = int, metavar = ('YMAX'), default = 500, help = 'don\'t draw above height YMAX (default = 500)')
+    parser.add_argument('--minheight', type = int, metavar = ('YMIN'), default = -500, help = 'don\'t draw below height YMIN (defualt = -500)')
+    parser.add_argument('--pixelspernode', type = int, metavar = ('PPN'), default = 1, help = 'number of pixels per node (default = 1)')
     parser.add_argument('--facing', type = str, choices = ('up','down','north','south','east','west'),default='down',help = 'direction to face when drawing (north, south, east or west will draw a cross-section)')
     parser.add_argument('--fog', type = float, metavar = ('FOGSTRENGTH'), default = 0.0, help = 'use fog strength of FOGSTRENGTH (0.0 by default, max of 1.0)')
     parser.add_argument('world_dir',help='the path to the world you want to map')
@@ -729,8 +730,14 @@ def draw_image(world,uid_to_color):
     print("Drawing image")
     starttime = time.time()
     border = 40 if args.drawscale else 0
-    im = Image.new("RGB", (w + border, h + border), args.bgcolor)
+    im = Image.new("RGB", (w*args.pixelspernode + border, h*args.pixelspernode + border), args.bgcolor)
     draw = ImageDraw.Draw(im)
+
+    if args.pixelspernode>1:
+        stuff['content'] = stuff['content'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
+        stuff['dnd'] = stuff['dnd'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
+        stuff['height'] = stuff['height'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
+        stuff['water'] = stuff['water'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
 
     if args.facing in ['west','south']:
         stuff['content'] = stuff['content'][::-1,:]
@@ -781,12 +788,12 @@ def draw_image(world,uid_to_color):
 
     if args.draworigin:
         if args.facing in ['south','west']:
-            draw.ellipse((w - (minx * -16 - 5 + border), h - minz * -16 - 6 + border,
-                w - (minx * -16 + 5 + border), h - minz * -16 + 4 + border),
+            draw.ellipse(((w - (minx * -16 - 5 + border))*args.pixelspernode, (h - minz * -16 - 6 + border)*args.pixelspernode,
+                (w - (minx * -16 + 5 + border))*args.pixelspernode, (h - minz * -16 + 4 + border))*args.pixelspernode,
                 outline=args.origincolor)
         else:
-            draw.ellipse((minx * -16 - 5 + border, h - minz * -16 - 6 + border,
-                minx * -16 + 5 + border, h - minz * -16 + 4 + border),
+            draw.ellipse(((minx * -16 - 5 + border)*args.pixelspernode, (h - minz * -16 - 6 + border)*args.pixelspernode,
+                (minx * -16 + 5 + border)*args.pixelspernode, (h - minz * -16 + 4 + border)*args.pixelspernode),
                 outline=args.origincolor)
 
     font = ImageFont.load_default()
@@ -804,22 +811,22 @@ def draw_image(world,uid_to_color):
 
         if args.facing in ['west','south']:
             for n in range(int(minx / -4) * -4, maxx, 4):
-                draw.text((minx * -16 + n * 16 + 2 + border, 0), str(maxx*16 - n * 16),
+                draw.text(((minx * -16 + n * 16 + 2 + border)*args.pixelspernode, 0), str(maxx*16 - n * 16),
                     font=font, fill=args.scalecolor)
-                draw.line((minx * -16 + n * 16 + border, 0,
-                    minx * -16 + n * 16 + border, border - 1), fill=args.scalecolor)
+                draw.line(((minx * -16 + n * 16 + border)*args.pixelspernode, 0,
+                    (minx * -16 + n * 16 + border)*args.pixelspernode, border - 1), fill=args.scalecolor)
         else:
             for n in range(int(minx / -4) * -4, maxx, 4):
-                draw.text((minx * -16 + n * 16 + 2 + border, 0), str(n * 16),
+                draw.text(((minx * -16 + n * 16 + 2 + border)*args.pixelspernode, 0), str(n * 16),
                     font=font, fill=args.scalecolor)
-                draw.line((minx * -16 + n * 16 + border, 0,
-                    minx * -16 + n * 16 + border, border - 1), fill=args.scalecolor)
+                draw.line(((minx * -16 + n * 16 + border)*args.pixelspernode, 0,
+                    (minx * -16 + n * 16 + border)*args.pixelspernode, border - 1), fill=args.scalecolor)
 
         for n in range(int(maxz / 4) * 4, minz, -4):
-            draw.text((2, h - 1 - (n * 16 - minz * 16) + border), str(n * 16),
+            draw.text((2, (h - 1 - (n * 16 - minz * 16) + border)*args.pixelspernode), str(n * 16),
                 font=font, fill=args.scalecolor)
-            draw.line((0, h - 1 - (n * 16 - minz * 16) + border, border - 1,
-                h - 1 - (n * 16 - minz * 16) + border), fill=args.scalecolor)
+            draw.line((0, (h - 1 - (n * 16 - minz * 16) + border)*args.pixelspernode, border - 1,
+                (h - 1 - (n * 16 - minz * 16) + border)*args.pixelspernode), fill=args.scalecolor)
 
     if args.drawplayers:
         try:
@@ -840,14 +847,14 @@ def draw_image(world,uid_to_color):
                     x,y,z = [int(float(p)/10) for p in position]
                     x,y,z = world.facing(x,y,z)
                     if args.facing in ['south','west']:
-                        x = w - x - minx * 16
-                        z = h - z - minz * 16
+                        x = (w - x - minx * 16)*args.pixelspernode
+                        z = (h - z - minz * 16)*args.pixelspernode
                     else:
-                        x = x - minx * 16
-                        z = h - z - minz * 16
-                    draw.ellipse((x - 2 + border, z - 2 + border,
-                        x + 2 + border, z + 2 + border), outline=args.playercolor)
-                    draw.text((x + 2 + border, z + 2 + border), name,
+                        x = (x - minx * 16)*args.pixelspernode
+                        z = (h - z - minz * 16)*args.pixelspernode
+                    draw.ellipse(((x - 2 + border)*args.pixelspernode, (z - 2 + border)*args.pixelspernode,
+                        (x + 2 + border)*args.pixelspernode, (z + 2 + border)*args.pixelspernode), outline=args.playercolor)
+                    draw.text(((x + 2 + border)*args.pixelspernode, (z + 2 + border)*args.pixelspernode), name,
                         font=font, fill=args.playercolor)
                 f.close()
         except OSError:
