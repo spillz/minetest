@@ -33,7 +33,6 @@ import numpy
 import itertools
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
-
 TRANSLATION_TABLE = {
     1: 0x800,  # CONTENT_GRASS
     4: 0x801,  # CONTENT_TREE
@@ -164,11 +163,14 @@ def parse_args():
     parser.add_argument('--scalecolor', default='white', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the ruler and text color for the scale')
     parser.add_argument('--origincolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for the map origin')
     parser.add_argument('--playercolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for player markers')
-    parser.add_argument('--fogcolor', default='lightblue', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for fog')
+    parser.add_argument('--fogcolor', default='grey', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for fog (default grey)')
+    parser.add_argument('--ugcolor', default='purple', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for underground areas (default purple)')
     parser.add_argument('--drawscale',action='store_const', const = True, default=False, help = 'draw a scale on the border of the map')
     parser.add_argument('--drawplayers',action='store_const', const = True, default = False, help = 'draw markers for players')
     parser.add_argument('--draworigin',action='store_const', const = True, default = False, help = 'draw the position of the origin (0,0)')
-    parser.add_argument('--drawunderground',action = 'store_const', const = True, default = False, help = 'draw underground areas (NOT IMPLEMENTED!)')
+    parser.add_argument('--drawunderground',dest='drawunderground',action='store_const', const = 1, help = 'draw underground areas overlaid on the map')
+    parser.add_argument('--drawunderground-standalone',dest='drawunderground',action='store_const', const = 2, help = 'draw underground areas as a standalone map')
+#    parser.add_argument('--drawunderground',type=str, choices = ('','overlay','standalone'), default = '', help = 'draw underground areas (NOT IMPLEMENTED!)')
     parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes, default = -2000 2000 -2000 2000)')
     parser.add_argument('--maxheight', type = int, metavar = ('YMAX'), default = 500, help = 'don\'t draw above height YMAX (default = 500)')
     parser.add_argument('--minheight', type = int, metavar = ('YMIN'), default = -500, help = 'don\'t draw below height YMIN (defualt = -500)')
@@ -296,27 +298,10 @@ def legacy_fetch_ylist(args,xpos,zpos,ylist):
     return sectortype
 
 
-def find(arr,value,axis=-1):
-    return ((arr==value).cumsum(axis=axis)==0).sum(axis=axis)
-
-count = 0
-
-def map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order):
-    global count
-    if(len(mapdata) < 4096):
-        print("bad: " + xhex + "/" + zhex + "/" + yhex + " " + \
-            str(len(mapdata)))
-    else:
-#        if count>2:
-#            return
-        chunkypos = ypos * 16
-        mapdata = mapdata[:4096]
-#        if face_swap_order[0]<0:
-#            mapdata = mapdata[::face_swap_order[0]]
-        mapdata = id_map[mapdata]
-        if (mapdata==ignore).all():
-            return plist
-        count += 1
+#Alternative map_block
+#def find(arr,value,axis=-1):
+#    return ((arr==value).cumsum(axis=axis)==0).sum(axis=axis)
+#
 #        if False:
 #            mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),0,2)
 #            mapdata = numpy.swapaxes(mapdata,1,2).reshape(256,16)
@@ -329,33 +314,64 @@ def map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_ni
 #            cdata[po] = content[po][:,hpo]
 #            dnddata[po] = day_night_differs
 #            plist = plist[~po]
-#        else:
-        (swap1a,swap1b),(swap2a,swap2b) = face_swap_order[1:]
-#        mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),1,0)
-#        mapdata = numpy.swapaxes(mapdata,1,2).reshape(16,256)
-        mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),swap1a,swap1b)
-        mapdata = numpy.swapaxes(mapdata,swap2a,swap2b).reshape(16,256)
-        if face_swap_order[0]>0:
-            r = range(maxy,-1,-1)
-        else:
-            r = range(maxy,16,1)
-        y=maxy
-        for y in r:
-            if len(plist)==0:
-                break
-            content = mapdata[y][plist]
-#            content = id_func(mapdata[y][plist])
+
+
+def map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order):
+    chunkypos = ypos * 16
+    mapdata = mapdata[:4096]
+    mapdata = id_map[mapdata]
+    if (mapdata==ignore).all():
+        return plist
+    (swap1a,swap1b),(swap2a,swap2b) = face_swap_order[1:]
+    mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),swap1a,swap1b)
+    mapdata = numpy.swapaxes(mapdata,swap2a,swap2b).reshape(16,256)
+    if face_swap_order[0]>0:
+        r = range(maxy,-1,-1)
+    else:
+        r = range(maxy,16,1)
+    y=maxy
+    for y in r:
+        if len(plist)==0:
+            break
+        content = mapdata[y][plist]
 #            watercontent = content_is_water(content)
 #            wdata[plist] += watercontent
 #            opaques = ~( (content_is_air(content) | content_is_ignore(content) | watercontent))
-            opaques = ~( (content == ignore) | (content == air) )
-            po = plist[opaques]
-            cdata[po] = content[opaques]
-            hdata[po] = chunkypos + y
-            dnddata[po] = day_night_differs
-            plist = plist[~opaques]
-            y-=1
+        opaques = ~( (content == ignore) | (content == air) )
+        po = plist[opaques]
+        pno = plist[~opaques]
+        cdata[po] = content[opaques]
+        hdata[po] = chunkypos + y
+        dnddata[po] = day_night_differs
+        plist = plist[~opaques]
+        y-=1
     return plist
+
+def map_block_ug(mapdata, version, ypos, maxy, cdata, hdata, udata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order):
+    chunkypos = ypos * 16
+    mapdata = mapdata[:4096]
+    mapdata = id_map[mapdata]
+    if (mapdata==ignore).all():
+        return
+    (swap1a,swap1b),(swap2a,swap2b) = face_swap_order[1:]
+    mapdata = numpy.swapaxes(mapdata.reshape(16,16,16),swap1a,swap1b)
+    mapdata = numpy.swapaxes(mapdata,swap2a,swap2b).reshape(16,256)
+    if face_swap_order[0]>0:
+        r = range(maxy,-1,-1)
+    else:
+        r = range(maxy,16,1)
+    y=maxy
+    for y in r:
+        content = mapdata[y]
+        opaques = ~( (content == ignore) | (content == air) )
+        copaques = ~( (cdata == ignore) | (cdata == air) )
+        air = (content == air)
+        cdata[~copaques] = content[~copaques]
+        hdata[~copaques] = chunkypos + y
+        dnddata[~copaques] = day_night_differs
+        udata[~opaques] += (air * copaques)[~opaques]
+#        uhdata[~opaques] = air*copaques
+        y-=1
 
 
 class World:
@@ -472,6 +488,8 @@ class World:
             'content':numpy.zeros([w,h],dtype='u2'),
             'water':numpy.zeros([w,h],dtype = 'u2'),
             'dnd':numpy.zeros([w,h],dtype=bool)}
+        if args.drawunderground:
+            mapinfo['underground'] = numpy.zeros([w,h],dtype = 'u2')
 
 
         unknown_node_names = set()
@@ -532,6 +550,8 @@ class World:
             hdata = numpy.ones(256,dtype='i4')*miny
             wdata = numpy.zeros(256,dtype='i4')
             dnddata = numpy.zeros(256,dtype=bool)
+            if args.drawunderground:
+                udata = numpy.zeros(256,dtype='i4')
             plist = numpy.arange(256)
 
             # Go through the Y axis from top to bottom.
@@ -679,10 +699,13 @@ class World:
                         if ypos*16 + 15 < self.minypos:
                             maxy = ypos*16 - self.minypos
                     if maxy>=0:
-                        plist = map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order)
+                        if args.drawunderground:
+                            plist = map_block_ug(mapdata, version, ypos, maxy, cdata, hdata, udata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order)
+                        else:
+                            plist = map_block(mapdata, version, ypos, maxy, plist, cdata, hdata, dnddata, day_night_differs, id_map, ignore, air, face_swap_order)
                     # After finding all the pixels in the sector, we can move on to
                     # the next sector without having to continue the Y axis.
-                    if len(plist) == 0 or ypos==ylist[-1][0]:
+                    if (not args.drawunderground and len(plist) == 0) or ypos==ylist[-1][0]:
                         chunkxpos = (xpos-minx)*16
                         chunkzpos = (zpos-minz)*16
                         if True: #face_swap_order[0]<0:
@@ -694,6 +717,8 @@ class World:
                         mapinfo['content'][pos] = cdata.reshape(16,16)
                         mapinfo['water'][pos] = wdata.reshape(16,16)
                         mapinfo['dnd'][pos] = dnddata.reshape(16,16)
+                        if args.drawunderground:
+                            mapinfo['underground'][pos] = udata.reshape(16,16)
                         break
                 except Exception as e:
                     print("Error at ("+str(xpos)+","+str(ypos)+","+str(zpos)+"): "+str(e))
@@ -776,19 +801,33 @@ def draw_image(world,uid_to_color):
             fogstrength = 1-fogstrength
         fogstrength = args.fog * fogstrength
         fogstrength = fogstrength[:,:,numpy.newaxis]
+    if args.drawunderground:
+        ugstrength = 1.0*(stuff['underground'])/6 #normalize so that 6 blocks of air underground is considered "big"
+        ugstrength = (ugstrength>0)*0.1 + 0.9*ugstrength
+        ugstrength = ugstrength - (ugstrength-0.75)*(ugstrength>0.75)
+        ugstrength = ugstrength[:,:,numpy.newaxis]
 
-    colors = numpy.array([args.bgcolor,args.bgcolor]+[uid_to_color[c] for c in sorted(uid_to_color)],dtype = 'i2')
+    if args.drawunderground < 2:
+        colors = numpy.array([args.bgcolor,args.bgcolor]+[uid_to_color[c] for c in sorted(uid_to_color)],dtype = 'i2')
+    else:
+        colors = numpy.array([args.bgcolor,args.bgcolor]+[args.bgcolor for c in sorted(uid_to_color)],dtype = 'i2')
 
     pix = colors[stuff['content']]
-    pix[1:,:-1] += drop[:,:,numpy.newaxis]
-    pix = numpy.clip(pix,0,255)
-    if args.fog>0:
-        pix = args.fogcolor*fogstrength + pix*(1-fogstrength)
+    if args.drawunderground < 2:
+        pix[1:,:-1] += drop[:,:,numpy.newaxis]
         pix = numpy.clip(pix,0,255)
+        if args.fog>0:
+            pix = args.fogcolor*fogstrength + pix*(1-fogstrength)
+            pix = numpy.clip(pix,0,255)
+    if args.drawunderground:
+        pix = args.ugcolor*ugstrength + pix*(1-ugstrength)
+        pix = numpy.clip(pix,0,255)
+
     pix = numpy.array(pix,dtype = 'u1')
     impix = Image.fromarray(pix,'RGB')
     impix = impix.transpose(Image.ROTATE_90)
     im.paste(impix,(border,border))
+
 
     if args.draworigin:
         if args.facing in ['east','north','up']:
@@ -847,7 +886,7 @@ def draw_image(world,uid_to_color):
                     if p[0] == "position":
                         position = string.split(p[2][1:-1], ",")
                         print(filename + ": position = " + p[2])
-                if len(name) > 0 and len(position) == 3:
+                if len(name) < 0 and len(position) == 3:
                     x,y,z = [int(float(p)/10) for p in position]
                     x,y,z = world.facing(x,y,z)
                     if args.facing in ['east','north','up']:
