@@ -831,7 +831,6 @@ def draw_image(world,uid_to_color):
         ugstrength = ugstrength[:,:,numpy.newaxis]
         ugdepth = 1.0* (stuff['undergroundh']-stuff['undergroundh'].min())/(stuff['undergroundh'].max()-stuff['undergroundh'].min())
         ugdepth = ugdepth[:,:,numpy.newaxis]
-        print '***',ugdepth.sum()/(ugdepth>0).sum()
         u = stuff['underground']
         u0 = u[1:,:-1]>0
         u1 = u[:-1,1:]>0

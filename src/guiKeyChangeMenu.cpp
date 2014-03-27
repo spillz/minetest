@@ -58,6 +58,7 @@ enum
 	// other
 	GUI_ID_CB_AUX1_DESCENDS,
 	GUI_ID_CB_DOUBLETAP_JUMP,
+	GUI_ID_KEY_ALIAS_BUTTON,
 };
 
 GUIKeyChangeMenu::GUIKeyChangeMenu(gui::IGUIEnvironment* env,
@@ -104,7 +105,7 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 {
 	removeChildren();
 	v2s32 size(620, 430);
-	
+
 	core::rect < s32 > rect(screensize.X / 2 - size.X / 2,
 							screensize.Y / 2 - size.Y / 2, screensize.X / 2 + size.X / 2,
 							screensize.Y / 2 + size.Y / 2);
@@ -113,7 +114,7 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 	recalculateAbsolutePosition(false);
 
 	v2s32 topleft(0, 0);
-	
+
 	{
 		core::rect < s32 > rect(0, 0, 600, 40);
 		rect += topleft + v2s32(25, 3);
@@ -132,6 +133,12 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 	for(size_t i = 0; i < key_settings.size(); i++)
 	{
 		key_setting *k = key_settings.at(i);
+		std::cout << "button name: " ;
+		std::cout.flush();
+		std::wcout << k->button_name;
+		std::cout << " setting name: " <<k->setting_name << " id: " << k->id <<std::endl;
+		std::wcout.flush();
+		std::cout.flush();
 		{
 			core::rect < s32 > rect(0, 0, 100, 20);
 			rect += topleft + v2s32(offset.X, offset.Y);
@@ -150,7 +157,7 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 		else
 			offset += v2s32(0, 25);
 	}
-	
+
 	{
 		s32 option_x = offset.X + 10;
 		s32 option_y = offset.Y;
@@ -182,6 +189,14 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 	}
 
 	{
+		core::rect < s32 > rect(0, 0, 200, 30);
+		rect += topleft + v2s32(25, size.Y - 40);
+		wchar_t* text =  wgettext("Command Alias Keys...");
+		Environment->addButton(rect, this, GUI_ID_KEY_ALIAS_BUTTON,
+							 text);
+		delete[] text;
+	}
+	{
 		core::rect < s32 > rect(0, 0, 100, 30);
 		rect += topleft + v2s32(size.X - 100 - 20, size.Y - 40);
 		wchar_t* text =  wgettext("Save");
@@ -196,7 +211,7 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 		Environment->addButton(rect, this, GUI_ID_ABORT_BUTTON,
 							 text );
 		delete[] text;
-	}	
+	}
 }
 
 void GUIKeyChangeMenu::drawMenu()
@@ -263,10 +278,10 @@ bool GUIKeyChangeMenu::OnEvent(const SEvent& event)
 	if (event.EventType == EET_KEY_INPUT_EVENT && activeKey >= 0
 		&& event.KeyInput.PressedDown)
 	{
-		
+
 		bool prefer_character = shift_down;
 		KeyPress kp(event.KeyInput, prefer_character);
-		
+
 		bool shift_went_down = false;
 		if(!shift_down &&
 				(event.KeyInput.Key == irr::KEY_SHIFT ||
@@ -345,6 +360,17 @@ bool GUIKeyChangeMenu::OnEvent(const SEvent& event)
 				case GUI_ID_ABORT_BUTTON: //abort
 					quitMenu();
 					return true;
+                case GUI_ID_KEY_ALIAS_BUTTON: // open the key command alias dialog
+//                    GUIEngine* engine = getGuiEngine(L);
+//                    assert(engine != 0);
+//
+//                    GUIKeyAliasChangeMenu *kamenu
+//                        = new GUIKeyAliasChangeMenu(Environment,
+//                                                this,
+//                                                -1,
+//                                                engine->m_menumanager);
+//                    kamenu->drop();
+                    break;
 				default:
 					key_setting *k = NULL;
 					for(size_t i = 0; i < key_settings.size(); i++)
