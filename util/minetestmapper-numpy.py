@@ -696,9 +696,9 @@ class World:
                             if name == 'ignore':
                                 ignore = id_to_name[node_id]
                     if len(id_to_name)==0:
-                        id_map = [0,1]
+                        id_map = numpy.array([0,1],dtype='i4')
                     else:
-                        id_map = numpy.array([id_to_name[i] for i in sorted(id_to_name)])
+                        id_map = numpy.array([id_to_name[i] for i in sorted(id_to_name)],dtype='i4')
 
                     # Node timers
                     if version >= 25:
@@ -829,6 +829,8 @@ def draw_image(world,uid_to_color):
         ugstrength = (ugstrength>0)*0.1 + ugcoeff*ugstrength
         ugstrength = ugstrength - (ugstrength-0.75)*(ugstrength>0.75)
         ugstrength = ugstrength[:,:,numpy.newaxis]
+        print('ugmin',stuff['undergroundh'].min())
+        print('ugmax',stuff['undergroundh'].max())
         ugdepth = 1.0* (stuff['undergroundh']-stuff['undergroundh'].min())/(stuff['undergroundh'].max()-stuff['undergroundh'].min())
         ugdepth = ugdepth[:,:,numpy.newaxis]
         u = stuff['underground']
