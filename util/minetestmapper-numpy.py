@@ -494,7 +494,7 @@ class World:
         if args.facing in ['up','down']:
             face_swap_order = [1,(1,0),(1,2)]
         elif args.facing in ['east','west']:
-            face_swap_order = [1,(2,0),(2,1)] ##might be (2,1) for the third tuple item
+            face_swap_order = [1,(2,0),(2,1)]
         elif args.facing in ['north','south']:
             face_swap_order = [1,(0,0),(1,2)]
         if args.facing in ['up','east','north']:
@@ -777,6 +777,7 @@ def draw_image(world,uid_to_color):
     maxz = world.maxz
     w = world.w
     h = world.h
+    reverse_dirs = ['east','south','up']
 
     print("Drawing image")
     starttime = time.time()
@@ -790,7 +791,7 @@ def draw_image(world,uid_to_color):
         stuff['height'] = stuff['height'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
         stuff['water'] = stuff['water'].repeat(args.pixelspernode,axis=0).repeat(args.pixelspernode,axis=1)
 
-    if args.facing in ['east','north','up']:
+    if args.facing in reverse_dirs:
         stuff['content'] = stuff['content'][::-1,:]
         stuff['dnd'] = stuff['dnd'][::-1,:]
         stuff['height'] = stuff['height'][::-1,:]
@@ -819,7 +820,7 @@ def draw_image(world,uid_to_color):
 
     if args.fog>0:
         fogstrength = 1.0* (stuff['height']-stuff['height'].min())/(stuff['height'].max()-stuff['height'].min())
-        if args.facing in ['down','south','west']:
+        if args.facing in reverse_dirs:
             fogstrength = 1-fogstrength
         fogstrength = args.fog * fogstrength
         fogstrength = fogstrength[:,:,numpy.newaxis]
@@ -842,7 +843,7 @@ def draw_image(world,uid_to_color):
         h1 = hgh[:-1,1:]
         h2 = hgh[1:, 1:]
         dropg = (2*h0 - h1 - h2) * 12 * u0 * u1 * u2
-        if args.facing in ['east','north','up']:
+        if args.facing in reverse_dirs:
             dropg = -dropg
         dropg = numpy.clip(dropg,-32,32)
 
@@ -894,7 +895,7 @@ def draw_image(world,uid_to_color):
             draw.text((24, 0), "X", font=font, fill=args.scalecolor)
             draw.text((2, 24), "Y", font=font, fill=args.scalecolor)
 
-        if args.facing in ['east','north','up']:
+        if args.facing in reverse_dirs:
             for n in range(int(minx / -4) * -4, maxx+1, 4):
                 draw.text(((w - (minx * -16 + n * 16))*args.pixelspernode + border + 2, 0), str(n * 16),
                     font=font, fill=args.scalecolor)
@@ -931,7 +932,7 @@ def draw_image(world,uid_to_color):
                 if len(name) < 0 and len(position) == 3:
                     x,y,z = [int(float(p)/10) for p in position]
                     x,y,z = world.facing(x,y,z)
-                    if args.facing in ['east','north','up']:
+                    if args.facing in reverse_dirs:
                         x = (w - x - minx * 16)*args.pixelspernode
                         z = (h - z - minz * 16)*args.pixelspernode
                     else:
