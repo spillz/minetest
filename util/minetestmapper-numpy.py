@@ -390,13 +390,65 @@ def map_block_ug(mapdata, version, ypos, maxy, cdata, hdata, udata, uhdata, dndd
     return (~( (cdata == ignore) | (cdata == air) )).all()
 #        y-=1
 
+def get_db(args):
+    if not os.path.exists(args.world_dir+"world.mt"):
+        return None
+    with open(args.world_dir+"world.mt") as f:
+        keyvals = f.read().splitlines()
+    keyvals = [kv.split("=") for kv in keyvals]
+    backend = None
+    for k,v in keyvals:
+        if k.strip() == "backend":
+            backend = v.strip()
+            break
+    if backend == "sqlite3":
+        return SQLDB(args.world_dir + "map.sqlite")
+    if backend == "leveldb":
+        return LVLDB(args.world_dir + "map.db")
+
+class SQLDB:
+    def __init__(self, path):
+        import sqlite3
+        conn = sqlite3.connect(path)
+        self.cur = conn.cursor()
+
+    def __iter__(self):
+        self.cur.execute("SELECT `pos` FROM `blocks`")
+        while True:
+            r = self.cur.fetchone()
+            if not r:
+                break
+            x, y, z = getIntegerAsBlock(r[0])
+            yield x,y,z,r[0]
+
+    def get(self, pos):
+        self.cur.execute("SELECT `data` FROM `blocks` WHERE `pos`==? LIMIT 1", (pos,))
+        r = self.cur.fetchone()
+        if not r:
+            return
+        return cStringIO.StringIO(r[0])
+
+class LVLDB:
+    def __init__(self, path):
+        import leveldb
+        self.conn = leveldb.LevelDB(path)
+
+    def __iter__(self):
+        for k in self.conn.RangeIter():
+            x, y, z = getIntegerAsBlock(int(k[0]))
+            yield x, y, z, k[0]
+
+    def get(self, pos):
+        return cStringIO.StringIO(self.conn.Get(pos))
+
+
 
 class World:
     def __init__(self,args):
         self.xlist = []
         self.zlist = []
         self.args = args
-        self.cur = None
+        self.db = None
         self.minx = None
         self.minz = None
         self.maxx = None
@@ -422,24 +474,10 @@ class World:
         sector_ymax = args.maxheight/16
         xlist = []
         zlist = []
-        conn = None
-        cur = None
         self.lookup={}
-        if os.path.exists(args.world_dir + "map.sqlite"):
-            import sqlite3
-            conn = sqlite3.connect(args.world_dir + "map.sqlite")
-            cur = conn.cursor()
-            self.cur = cur
-
-            cur.execute("SELECT `pos` FROM `blocks`")
-            #cur.execute("SELECT `pos`,`data` FROM `blocks`")
-            while True:
-                r = cur.fetchone()
-                if not r:
-                    break
-
-                x, y, z = getIntegerAsBlock(r[0])
-
+        self.db = get_db(args)
+        if self.db is not None:
+            for x, y, z, pos in self.db:
                 if x < sector_xmin or x > sector_xmax:
                     continue
                 if z < sector_zmin or z > sector_zmax:
@@ -449,9 +487,9 @@ class World:
 
                 x, y, z = self.facing(x, y, z)
                 try:
-                    self.lookup[(x,z)].append((y,r[0]))
+                    self.lookup[(x,z)].append((y,pos))
                 except KeyError:
-                    self.lookup[(x,z)]=[(y,r[0])]
+                    self.lookup[(x,z)]=[(y,pos)]
                 xlist.append(x)
                 zlist.append(z)
         else:
@@ -477,7 +515,7 @@ class World:
 
     def generate_map_info(self,str_to_uid):
         read_map_time = 0
-        cur = self.cur
+        db = self.db
         xlist = self.xlist
         zlist = self.zlist
         args = self.args
@@ -543,7 +581,7 @@ class World:
 
             sectortype = ""
 
-            if cur:
+            if db is not None:
                 ymin = self.minypos/16 #-2048 if args.minheight is None else args.minheight/16+1
                 ymax = self.maxypos/16+1 #2047 if args.maxheight is None else args.maxheight/16+1
                 for k in self.lookup[(xpos,zpos)]:
@@ -577,14 +615,8 @@ class World:
             for ypos,ps in ylist:
                 try:
 
-                    if sectortype == "sqlite":
-                        ps1 = getBlockAsInteger((xpos, ypos, zpos))
-                        cur.execute("SELECT `data` FROM `blocks` WHERE `pos`==? LIMIT 1", (ps,))
-                        r = cur.fetchone()
-                        if not r:
-                            continue
-                        f = cStringIO.StringIO(r[0])
-#                        f = cStringIO.StringIO(blob)
+                    if db is not None:
+                        f = db.get(ps)
                     else:
                         f = legacy_fetch_sector_data(args, sectortype, sector_data, ypos)
 
