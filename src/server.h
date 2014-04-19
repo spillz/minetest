@@ -122,8 +122,8 @@ struct MediaInfo
 	std::string path;
 	std::string sha1_digest;
 
-	MediaInfo(const std::string path_="",
-			const std::string sha1_digest_=""):
+	MediaInfo(const std::string &path_="",
+	          const std::string &sha1_digest_=""):
 		path(path_),
 		sha1_digest(sha1_digest_)
 	{
@@ -174,7 +174,8 @@ public:
 	Server(
 		const std::string &path_world,
 		const SubgameSpec &gamespec,
-		bool simple_singleplayer_mode
+		bool simple_singleplayer_mode,
+		bool ipv6
 	);
 	~Server();
 	void start(Address bind_addr);
@@ -185,6 +186,7 @@ public:
 	// This is run by ServerThread and does the actual processing
 	void AsyncRunStep(bool initial_step=false);
 	void Receive();
+	PlayerSAO* StageTwoClientInit(u16 peer_id);
 	void ProcessData(u8 *data, u32 datasize, u16 peer_id);
 
 	// Environment must be locked when called
@@ -229,8 +231,8 @@ public:
 	void unsetIpBanned(const std::string &ip_or_name);
 	std::string getBanDescription(const std::string &ip_or_name);
 
-	void notifyPlayer(const char *name, const std::wstring msg);
-	void notifyPlayers(const std::wstring msg);
+	void notifyPlayer(const char *name, const std::wstring &msg);
+	void notifyPlayers(const std::wstring &msg);
 	void spawnParticle(const char *playername,
 		v3f pos, v3f velocity, v3f acceleration,
 		float expirationtime, float size,
@@ -320,6 +322,9 @@ public:
 	inline Address getPeerAddress(u16 peer_id)
 			{ return m_con.GetPeerAddress(peer_id); }
 			
+	bool setLocalPlayerAnimations(Player *player, v2s32 animation_frames[4], f32 frame_speed);
+	bool setPlayerEyeOffset(Player *player, v3f first, v3f third);
+
 	bool setSky(Player *player, const video::SColor &bgcolor,
 			const std::string &type, const std::vector<std::string> &params);
 	
@@ -331,6 +336,10 @@ public:
 	void deletingPeer(con::Peer *peer, bool timeout);
 
 	void DenyAccess(u16 peer_id, const std::wstring &reason);
+	bool getClientConInfo(u16 peer_id, con::rtt_stat_type type,float* retval);
+	bool getClientInfo(u16 peer_id,ClientState* state, u32* uptime,
+			u8* ser_vers, u16* prot_vers, u8* major, u8* minor, u8* patch,
+			std::string* vers_string);
 
 private:
 
@@ -355,9 +364,11 @@ private:
 	void SendPlayerHP(u16 peer_id);
 	void SendPlayerBreath(u16 peer_id);
 	void SendMovePlayer(u16 peer_id);
+	void SendLocalPlayerAnimations(u16 peer_id, v2s32 animation_frames[4], f32 animation_speed);
+	void SendEyeOffset(u16 peer_id, v3f first, v3f third);
 	void SendPlayerPrivileges(u16 peer_id);
 	void SendPlayerInventoryFormspec(u16 peer_id);
-	void SendShowFormspecMessage(u16 peer_id, const std::string formspec, const std::string formname);
+	void SendShowFormspecMessage(u16 peer_id, const std::string &formspec, const std::string &formname);
 	void SendHUDAdd(u16 peer_id, u32 id, HudElement *form);
 	void SendHUDRemove(u16 peer_id, u32 id);
 	void SendHUDChange(u16 peer_id, u32 id, HudElementStat stat, void *value);

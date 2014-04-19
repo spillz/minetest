@@ -176,7 +176,7 @@ function update_menu()
 
 	-- handle errors
 	if gamedata.errormessage ~= nil then
-		formspec = "size[12,5.2]" ..
+		formspec = "size[12,5.2,true]" ..
 			"textarea[1,2;10,2;;ERROR: " ..
 			engine.formspec_escape(gamedata.errormessage) ..
 			";]"..
@@ -365,7 +365,7 @@ end
 
 function tabbuilder.gettab()
 	local tsize = tabbuilder.tabsizes[tabbuilder.current_tab] or {width=12, height=5.2}
-	local retval = "size[" .. tsize.width .. "," .. tsize.height .. "]"
+	local retval = "size[" .. tsize.width .. "," .. tsize.height .. ",true]"
 
 	if tabbuilder.show_buttons then
 		retval = retval .. tabbuilder.tab_header()
@@ -714,14 +714,14 @@ function tabbuilder.handle_settings_buttons(fields)
 	if fields["cb_particles"] then
 		engine.setting_set("enable_particles", fields["cb_particles"])
 	end
-	if fields["cb_finite_liquid"] then
-		engine.setting_set("liquid_finite", fields["cb_finite_liquid"])
-	end
 	if fields["cb_bumpmapping"] then
 		engine.setting_set("enable_bumpmapping", fields["cb_bumpmapping"])
 	end
 	if fields["cb_parallax"] then
 		engine.setting_set("enable_parallax_occlusion", fields["cb_parallax"])
+	end
+	if fields["cb_generate_normalmaps"] then
+		engine.setting_set("generate_normalmaps", fields["cb_generate_normalmaps"])
 	end
 	if fields["cb_waving_water"] then
 		engine.setting_set("enable_waving_water", fields["cb_waving_water"])
@@ -994,9 +994,6 @@ function tabbuilder.tab_settings()
 					.. dump(engine.setting_getbool("preload_item_visuals"))	.. "]"..
 			"checkbox[1,2.5;cb_particles;".. fgettext("Enable Particles") .. ";"
 					.. dump(engine.setting_getbool("enable_particles"))	.. "]"..
-			"checkbox[1,3.0;cb_finite_liquid;".. fgettext("Finite Liquid") .. ";"
-					.. dump(engine.setting_getbool("liquid_finite")) .. "]"..
-
 			"checkbox[4.5,0;cb_mipmapping;".. fgettext("Mip-Mapping") .. ";"
 					.. dump(engine.setting_getbool("mip_map")) .. "]"..
 			"checkbox[4.5,0.5;cb_anisotrophic;".. fgettext("Anisotropic Filtering") .. ";"
@@ -1010,27 +1007,30 @@ function tabbuilder.tab_settings()
 					.. dump(engine.setting_getbool("enable_shaders")) .. "]"..
 			"button[1,4.5;2.25,0.5;btn_change_keys;".. fgettext("Change keys") .. "]"
 
-if engine.setting_getbool("enable_shaders") then
-	tab_string = tab_string ..
+	if engine.setting_getbool("enable_shaders") then
+		tab_string = tab_string ..
 			"checkbox[8,0.5;cb_bumpmapping;".. fgettext("Bumpmapping") .. ";"
 					.. dump(engine.setting_getbool("enable_bumpmapping")) .. "]"..
 			"checkbox[8,1.0;cb_parallax;".. fgettext("Parallax Occlusion") .. ";"
 					.. dump(engine.setting_getbool("enable_parallax_occlusion")) .. "]"..
-			"checkbox[8,1.5;cb_waving_water;".. fgettext("Waving Water") .. ";"
+			"checkbox[8,1.5;cb_generate_normalmaps;".. fgettext("Generate Normalmaps") .. ";"
+					.. dump(engine.setting_getbool("generate_normalmaps")) .. "]"..
+			"checkbox[8,2.0;cb_waving_water;".. fgettext("Waving Water") .. ";"
 					.. dump(engine.setting_getbool("enable_waving_water")) .. "]"..
-			"checkbox[8,2.0;cb_waving_leaves;".. fgettext("Waving Leaves") .. ";"
+			"checkbox[8,2.5;cb_waving_leaves;".. fgettext("Waving Leaves") .. ";"
 					.. dump(engine.setting_getbool("enable_waving_leaves")) .. "]"..
-			"checkbox[8,2.5;cb_waving_plants;".. fgettext("Waving Plants") .. ";"
+			"checkbox[8,3.0;cb_waving_plants;".. fgettext("Waving Plants") .. ";"
 					.. dump(engine.setting_getbool("enable_waving_plants")) .. "]"
-else
-	tab_string = tab_string ..
+	else
+		tab_string = tab_string ..
 			"textlist[8.33,0.7;4,1;;#888888" .. fgettext("Bumpmapping") .. ";0;true]" ..
 			"textlist[8.33,1.2;4,1;;#888888" .. fgettext("Parallax Occlusion") .. ";0;true]" ..
-			"textlist[8.33,1.7;4,1;;#888888" .. fgettext("Waving Water") .. ";0;true]" ..
-			"textlist[8.33,2.2;4,1;;#888888" .. fgettext("Waving Leaves") .. ";0;true]" ..
-			"textlist[8.33,2.7;4,1;;#888888" .. fgettext("Waving Plants") .. ";0;true]"
+			"textlist[8.33,1.7;4,1;;#888888" .. fgettext("Generate Normalmaps") .. ";0;true]" ..
+			"textlist[8.33,2.2;4,1;;#888888" .. fgettext("Waving Water") .. ";0;true]" ..
+			"textlist[8.33,2.7;4,1;;#888888" .. fgettext("Waving Leaves") .. ";0;true]" ..
+			"textlist[8.33,3.2;4,1;;#888888" .. fgettext("Waving Plants") .. ";0;true]"
 	end
-return tab_string
+	return tab_string
 end
 
 --------------------------------------------------------------------------------

@@ -166,14 +166,14 @@ inline v2s16 readV2S16(const u8 *data)
 inline void writeV2S32(u8 *data, v2s32 p)
 {
 	writeS32(&data[0], p.X);
-	writeS32(&data[2], p.Y);
+	writeS32(&data[4], p.Y);
 }
 
 inline v2s32 readV2S32(const u8 *data)
 {
 	v2s32 p;
 	p.X = readS32(&data[0]);
-	p.Y = readS32(&data[2]);
+	p.Y = readS32(&data[4]);
 	return p;
 }
 
@@ -346,6 +346,19 @@ inline v2s16 readV2S16(std::istream &is)
 	return readV2S16((u8*)buf);
 }
 
+inline void writeV2S32(std::ostream &os, v2s32 p)
+{
+	char buf[8] = {0};
+	writeV2S32((u8*)buf, p);
+	os.write(buf, 8);
+}
+inline v2s32 readV2S32(std::istream &is)
+{
+	char buf[8] = {0};
+	is.read(buf, 8);
+	return readV2S32((u8*)buf);
+}
+
 inline void writeV3S16(std::ostream &os, v3s16 p)
 {
 	char buf[6] = {0};
@@ -403,7 +416,7 @@ std::string deSerializeJsonString(std::istream &is);
 
 // Creates a string containing comma delimited values of a struct whose layout is
 // described by the parameter format
-bool serializeStructToString(std::string *outstr,
+bool serializeStructToString(std::string *out,
 	std::string format, void *value);
 
 // Reads a comma delimited string of values into a struct whose layout is

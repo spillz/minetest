@@ -9,12 +9,28 @@
 #define PROJECT_NAME "Minetest"
 #define RUN_IN_PLACE 0
 #define USE_GETTEXT 0
-#define USE_SOUND 0
-#define USE_CURL 0
+#ifndef USE_SOUND
+	#define USE_SOUND 0
+#endif
+
+#ifndef USE_CURL
+	#define USE_CURL 0
+#endif
+
 #define USE_FREETYPE 0
 #define STATIC_SHAREDIR ""
-#define USE_LEVELDB 0
-#define USE_LUAJIT 0
+
+#ifndef USE_LEVELDB
+	#define USE_LEVELDB 0
+#endif
+
+#ifndef USE_LUAJIT
+	#define USE_LUAJIT 0
+#endif
+
+#ifndef USE_REDIS
+	#define USE_REDIS 0
+#endif
 
 #ifdef USE_CMAKE_CONFIG_H
 	#include "cmake_config.h"
@@ -36,6 +52,8 @@
 	#define USE_LEVELDB CMAKE_USE_LEVELDB
 	#undef USE_LUAJIT
 	#define USE_LUAJIT CMAKE_USE_LUAJIT
+	#undef USE_REDIS
+	#define USE_REDIS CMAKE_USE_REDIS
 	#undef VERSION_MAJOR
 	#define VERSION_MAJOR CMAKE_VERSION_MAJOR
 	#undef VERSION_MINOR

@@ -28,7 +28,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "IMeshCache.h"
 #include "client.h"
 #include "server.h"
-#include "guiPauseMenu.h"
 #include "guiPasswordChange.h"
 #include "guiVolumeChange.h"
 #include "guiFormSpecMenu.h"
@@ -75,24 +74,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	Text input system
 */
 
-struct TextDestChat : public TextDest
-{
-	TextDestChat(Client *client)
-	{
-		m_client = client;
-	}
-	void gotText(std::wstring text)
-	{
-		m_client->typeChatMessage(text);
-	}
-	void gotText(std::map<std::string, std::string> fields)
-	{
-		m_client->typeChatMessage(narrow_to_wide(fields["text"]));
-	}
-
-	Client *m_client;
-};
-
 struct TextDestNodeMetadata : public TextDest
 {
 	TextDestNodeMetadata(v3s16 p, Client *client)
@@ -136,12 +117,81 @@ struct TextDestPlayerInventory : public TextDest
 		m_client->sendInventoryFields(m_formname, fields);
 	}
 
-	void setFormName(std::string formname) {
+	Client *m_client;
+};
+
+struct LocalFormspecHandler : public TextDest
+{
+	LocalFormspecHandler();
+	LocalFormspecHandler(std::string formname) {
 		m_formname = formname;
 	}
 
+	LocalFormspecHandler(std::string formname,Client *client) {
+		m_formname = formname;
+		m_client = client;
+	}
+
+	void gotText(std::wstring message) {
+		errorstream << "LocalFormspecHandler::gotText old style message received" << std::endl;
+	}
+
+	void gotText(std::map<std::string, std::string> fields)
+	{
+		if (m_formname == "MT_PAUSE_MENU") {
+			if (fields.find("btn_sound") != fields.end()) {
+				g_gamecallback->changeVolume();
+				return;
+			}
+
+			if (fields.find("btn_exit_menu") != fields.end()) {
+				g_gamecallback->disconnect();
+				return;
+			}
+
+			if (fields.find("btn_exit_os") != fields.end()) {
+				g_gamecallback->exitToOS();
+				return;
+			}
+
+			if (fields.find("btn_change_password") != fields.end()) {
+				g_gamecallback->changePassword();
+				return;
+			}
+
+			if (fields.find("quit") != fields.end()) {
+				return;
+			}
+
+			if (fields.find("btn_continue") != fields.end()) {
+				return;
+			}
+		}
+		if (m_formname == "MT_CHAT_MENU") {
+			if ((fields.find("btn_send") != fields.end()) ||
+					(fields.find("quit") != fields.end())) {
+				if (fields.find("f_text") != fields.end()) {
+					if (m_client != 0) {
+						m_client->typeChatMessage(narrow_to_wide(fields["f_text"]));
+					}
+					else {
+						errorstream << "LocalFormspecHandler::gotText received chat message but m_client is NULL" << std::endl;
+					}
+				}
+				return;
+			}
+		}
+
+		errorstream << "LocalFormspecHandler::gotText unhandled >" << m_formname << "< event" << std::endl;
+		int i = 0;
+		for (std::map<std::string,std::string>::iterator iter = fields.begin();
+				iter != fields.end(); iter++) {
+			errorstream << "\t"<< i << ": " << iter->first << "=" << iter->second << std::endl;
+			i++;
+		}
+	}
+
 	Client *m_client;
-	std::string m_formname;
 };
 
 /* Respawn menu callback */
@@ -224,13 +274,9 @@ inline bool isPointableNode(const MapNode& n,
 	Find what the player is pointing at
 */
 PointedThing getPointedThing(Client *client, v3f player_position,
-		v3f camera_direction, v3f camera_position,
-		core::line3d<f32> shootline, f32 d,
-		bool liquids_pointable,
-		bool look_for_object,
-		v3s16 camera_offset,
-		std::vector<aabb3f> &hilightboxes,
-		ClientActiveObject *&selected_object)
+		v3f camera_direction, v3f camera_position, core::line3d<f32> shootline,
+		f32 d, bool liquids_pointable, bool look_for_object, v3s16 camera_offset,
+		std::vector<aabb3f> &hilightboxes, ClientActiveObject *&selected_object)
 {
 	PointedThing result;
 
@@ -379,9 +425,8 @@ PointedThing getPointedThing(Client *client, v3f player_position,
 	Additionally, a progressbar can be drawn when percent is set between 0 and 100.
 */
 /*gui::IGUIStaticText **/
-void draw_load_screen(const std::wstring &text,
-		IrrlichtDevice* device, gui::IGUIFont* font,
-		float dtime=0 ,int percent=0, bool clouds=true)
+void draw_load_screen(const std::wstring &text, IrrlichtDevice* device,
+		gui::IGUIFont* font, float dtime=0 ,int percent=0, bool clouds=true)
 {
 	video::IVideoDriver* driver = device->getVideoDriver();
 	v2u32 screensize = driver->getScreenSize();
@@ -430,8 +475,8 @@ void draw_load_screen(const std::wstring &text,
 /* Profiler display */
 
 void update_profiler_gui(gui::IGUIStaticText *guitext_profiler,
-		gui::IGUIFont *font, u32 text_height,
-		u32 show_profiler, u32 show_profiler_max)
+		gui::IGUIFont *font, u32 text_height, u32 show_profiler,
+		u32 show_profiler_max)
 {
 	if(show_profiler == 0)
 	{
@@ -818,14 +863,17 @@ public:
 		services->setPixelShaderConstant("eyePosition", (irr::f32*)&eye_position, 3);
 		services->setVertexShaderConstant("eyePosition", (irr::f32*)&eye_position, 3);
 
-		// Normal map texture layer
+		// Uniform sampler layers
+		int layer0 = 0;
 		int layer1 = 1;
 		int layer2 = 2;
 		// before 1.8 there isn't a "integer interface", only float
 #if (IRRLICHT_VERSION_MAJOR == 1 && IRRLICHT_VERSION_MINOR < 8)
+		services->setPixelShaderConstant("baseTexture" , (irr::f32*)&layer0, 1);
 		services->setPixelShaderConstant("normalTexture" , (irr::f32*)&layer1, 1);
 		services->setPixelShaderConstant("useNormalmap" , (irr::f32*)&layer2, 1);
 #else
+		services->setPixelShaderConstant("baseTexture" , (irr::s32*)&layer0, 1);
 		services->setPixelShaderConstant("normalTexture" , (irr::s32*)&layer1, 1);
 		services->setPixelShaderConstant("useNormalmap" , (irr::s32*)&layer2, 1);
 #endif
@@ -833,8 +881,7 @@ public:
 };
 
 bool nodePlacementPrediction(Client &client,
-		const ItemDefinition &playeritem_def,
-		v3s16 nodepos, v3s16 neighbourpos)
+		const ItemDefinition &playeritem_def, v3s16 nodepos, v3s16 neighbourpos)
 {
 	std::string prediction = playeritem_def.node_placement_prediction;
 	INodeDefManager *nodedef = client.ndef();
@@ -930,26 +977,98 @@ bool nodePlacementPrediction(Client &client,
 	return false;
 }
 
+static void show_chat_menu(FormspecFormSource* current_formspec,
+		TextDest* current_textdest, IWritableTextureSource* tsrc,
+		IrrlichtDevice * device, Client* client, std::string text)
+{
+	std::string formspec =
+		"size[11,5.5,true]"
+		"field[3,2.35;6,0.5;f_text;;" + text + "]"
+		"button_exit[4,3;3,0.5;btn_send;"  + wide_to_narrow(wstrgettext("Proceed")) + "]"
+		;
 
-void the_game(
-	bool &kill,
-	bool random_input,
-	InputHandler *input,
-	IrrlichtDevice *device,
-	gui::IGUIFont* font,
-	std::string map_dir,
-	std::string playername,
-	std::string password,
-	std::string address, // If "", local server is used
-	u16 port,
-	std::wstring &error_message,
-	ChatBackend &chat_backend,
-	const SubgameSpec &gamespec, // Used for local game,
-	bool simple_singleplayer_mode
-)
+	/* Create menu */
+	/* Note: FormspecFormSource and LocalFormspecHandler
+	 * are deleted by guiFormSpecMenu                     */
+	current_formspec = new FormspecFormSource(formspec,&current_formspec);
+	current_textdest = new LocalFormspecHandler("MT_CHAT_MENU",client);
+	GUIFormSpecMenu *menu =
+			new GUIFormSpecMenu(device, guiroot, -1,
+					&g_menumgr,
+					NULL, NULL, tsrc);
+	menu->doPause = false;
+	menu->setFormSource(current_formspec);
+	menu->setTextDest(current_textdest);
+	menu->drop();
+}
+
+/******************************************************************************/
+static void show_pause_menu(FormspecFormSource* current_formspec,
+		TextDest* current_textdest, IWritableTextureSource* tsrc,
+		IrrlichtDevice * device, bool singleplayermode)
+{
+
+	std::string control_text = wide_to_narrow(wstrgettext("Default Controls:\n"
+			"- WASD: move\n"
+			"- Space: jump/climb\n"
+			"- Shift: sneak/go down\n"
+			"- Q: drop item\n"
+			"- I: inventory\n"
+			"- Mouse: turn/look\n"
+			"- Mouse left: dig/punch\n"
+			"- Mouse right: place/use\n"
+			"- Mouse wheel: select item\n"
+			"- T: chat\n"
+			));
+
+	float ypos = singleplayermode ? 1.0 : 0.5;
+	std::ostringstream os;
+
+	os << "size[11,5.5,true]"
+			<< "button_exit[4," << (ypos++) << ";3,0.5;btn_continue;"
+					<< wide_to_narrow(wstrgettext("Continue"))     << "]";
+
+	if (!singleplayermode) {
+		os << "button_exit[4," << (ypos++) << ";3,0.5;btn_change_password;"
+					<< wide_to_narrow(wstrgettext("Change Password")) << "]";
+		}
+
+	os 		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_sound;"
+					<< wide_to_narrow(wstrgettext("Sound Volume")) << "]";
+	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_exit_menu;"
+					<< wide_to_narrow(wstrgettext("Exit to Menu")) << "]";
+	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_exit_os;"
+					<< wide_to_narrow(wstrgettext("Exit to OS"))   << "]"
+			<< "textarea[7.5,0.25;3.75,6;;" << control_text << ";]"
+			<< "textarea[0.4,0.25;3.5,6;;" << "Minetest\n"
+			<< minetest_build_info << "\n"
+			<< "path_user = " << wrap_rows(porting::path_user, 20)
+			<< "\n;]";
+
+	/* Create menu */
+	/* Note: FormspecFormSource and LocalFormspecHandler  *
+	 * are deleted by guiFormSpecMenu                     */
+	current_formspec = new FormspecFormSource(os.str(),&current_formspec);
+	current_textdest = new LocalFormspecHandler("MT_PAUSE_MENU");
+	GUIFormSpecMenu *menu =
+		new GUIFormSpecMenu(device, guiroot, -1, &g_menumgr, NULL, NULL, tsrc);
+	menu->doPause = true;
+	menu->setFormSource(current_formspec);
+	menu->setTextDest(current_textdest);
+	menu->drop();
+}
+
+/******************************************************************************/
+void the_game(bool &kill, bool random_input, InputHandler *input,
+	IrrlichtDevice *device, gui::IGUIFont* font, std::string map_dir,
+	std::string playername, std::string password,
+	std::string address /* If "", local server is used */,
+	u16 port, std::wstring &error_message, ChatBackend &chat_backend,
+	const SubgameSpec &gamespec /* Used for local game */,
+	bool simple_singleplayer_mode)
 {
 	FormspecFormSource* current_formspec = 0;
-	TextDestPlayerInventory* current_textdest = 0;
+	TextDest* current_textdest = 0;
 	video::IVideoDriver* driver = device->getVideoDriver();
 	scene::ISceneManager* smgr = device->getSceneManager();
 	
@@ -1028,27 +1147,34 @@ void the_game(
 		draw_load_screen(text, device, font,0,25);
 		delete[] text;
 		infostream<<"Creating server"<<std::endl;
-		server = new Server(map_dir, gamespec,
-				simple_singleplayer_mode);
 
 		std::string bind_str = g_settings->get("bind_address");
 		Address bind_addr(0,0,0,0, port);
 
-		if (bind_str != "")
-		{
-			try {
-				bind_addr.Resolve(bind_str.c_str());
-				address = bind_str;
-			} catch (ResolveError &e) {
-				infostream << "Resolving bind address \"" << bind_str
-						   << "\" failed: " << e.what()
-						   << " -- Listening on all addresses." << std::endl;
-
-				if (g_settings->getBool("ipv6_server")) {
-					bind_addr.setAddress((IPv6AddressBytes*) NULL);
-				}
-			}
+		if (g_settings->getBool("ipv6_server")) {
+			bind_addr.setAddress((IPv6AddressBytes*) NULL);
 		}
+		try {
+			bind_addr.Resolve(bind_str.c_str());
+			address = bind_str;
+		} catch (ResolveError &e) {
+			infostream << "Resolving bind address \"" << bind_str
+					   << "\" failed: " << e.what()
+					   << " -- Listening on all addresses." << std::endl;
+		}
+
+		if(bind_addr.isIPv6() && !g_settings->getBool("enable_ipv6")) {
+			error_message = L"Unable to listen on " +
+				narrow_to_wide(bind_addr.serializeString()) +
+				L" because IPv6 is disabled";
+			errorstream<<wide_to_narrow(error_message)<<std::endl;
+			// Break out of client scope
+			return;
+		}
+
+		server = new Server(map_dir, gamespec,
+				simple_singleplayer_mode,
+				bind_addr.isIPv6());
 
 		server->start(bind_addr);
 	}
@@ -1074,27 +1200,29 @@ void the_game(
 		delete[] text;
 	}
 	Address connect_address(0,0,0,0, port);
-	try{
-		if(address == "")
-		{
+	try {
+		connect_address.Resolve(address.c_str());
+		if (connect_address.isZero()) { // i.e. INADDR_ANY, IN6ADDR_ANY
 			//connect_address.Resolve("localhost");
-			if(g_settings->getBool("enable_ipv6") && g_settings->getBool("ipv6_server"))
-			{
+			if (connect_address.isIPv6()) {
 				IPv6AddressBytes addr_bytes;
 				addr_bytes.bytes[15] = 1;
 				connect_address.setAddress(&addr_bytes);
-			}
-			else
-			{
+			} else {
 				connect_address.setAddress(127,0,0,1);
 			}
 		}
-		else
-			connect_address.Resolve(address.c_str());
 	}
-	catch(ResolveError &e)
-	{
+	catch(ResolveError &e) {
 		error_message = L"Couldn't resolve address: " + narrow_to_wide(e.what());
+		errorstream<<wide_to_narrow(error_message)<<std::endl;
+		// Break out of client scope
+		break;
+	}
+	if(connect_address.isIPv6() && !g_settings->getBool("enable_ipv6")) {
+		error_message = L"Unable to connect to " +
+			narrow_to_wide(connect_address.serializeString()) +
+			L" because IPv6 is disabled";
 		errorstream<<wide_to_narrow(error_message)<<std::endl;
 		// Break out of client scope
 		break;
@@ -1147,7 +1275,7 @@ void the_game(
 				server->step(dtime);
 			
 			// End condition
-			if(client.connectedAndInitialized()){
+			if(client.getState() == LC_Init){
 				could_connect = true;
 				break;
 			}
@@ -1254,7 +1382,7 @@ void the_game(
 				errorstream<<wide_to_narrow(error_message)<<std::endl;
 				break;
 			}
-			if(!client.connectedAndInitialized()){
+			if(client.getState() < LC_Init){
 				error_message = L"Client disconnected";
 				errorstream<<wide_to_narrow(error_message)<<std::endl;
 				break;
@@ -1341,6 +1469,8 @@ void the_game(
 
 	f32 camera_yaw = 0; // "right/left"
 	f32 camera_pitch = 0; // "up/down"
+
+	int current_camera_mode = CAMERA_MODE_FIRST; // start in first-person view
 
 	/*
 		Clouds
@@ -1511,8 +1641,6 @@ void the_game(
 	*/
 	Hud hud(driver, smgr, guienv, font, text_height,
 			gamedef, player, &local_inventory);
-
-	bool use_weather = g_settings->getBool("weather");
 
 	core::stringw str = L"Minetest [";
 	str += driver->getName();
@@ -1781,6 +1909,7 @@ void the_game(
 
 			PlayerInventoryFormSource *src = new PlayerInventoryFormSource(&client);
 			assert(src);
+			menu->doPause = false;
 			menu->setFormSpec(src->getForm(), inventoryloc);
 			menu->setFormSource(src);
 			menu->setTextDest(new TextDestPlayerInventory(&client));
@@ -1788,33 +1917,16 @@ void the_game(
 		}
 		else if(input->wasKeyDown(EscapeKey))
 		{
-			infostream<<"the_game: "
-					<<"Launching pause menu"<<std::endl;
-			// It will delete itself by itself
-			(new GUIPauseMenu(guienv, guiroot, -1, g_gamecallback,
-					&g_menumgr, simple_singleplayer_mode))->drop();
-
-			// Move mouse cursor on top of the disconnect button
-			if(simple_singleplayer_mode)
-				input->setMousePos(displaycenter.X, displaycenter.Y+0);
-			else
-				input->setMousePos(displaycenter.X, displaycenter.Y+25);
+			show_pause_menu(current_formspec, current_textdest, tsrc, device,
+					simple_singleplayer_mode);
 		}
 		else if(input->wasKeyDown(getKeySetting("keymap_chat")))
 		{
-			TextDest *dest = new TextDestChat(&client);
-
-			(new GUITextInputMenu(guienv, guiroot, -1,
-					&g_menumgr, dest,
-					L""))->drop();
+			show_chat_menu(current_formspec, current_textdest, tsrc, device, &client,"");
 		}
 		else if(input->wasKeyDown(getKeySetting("keymap_cmd")))
 		{
-			TextDest *dest = new TextDestChat(&client);
-
-			(new GUITextInputMenu(guienv, guiroot, -1,
-					&g_menumgr, dest,
-					L"/"))->drop();
+			show_chat_menu(current_formspec, current_textdest, tsrc, device, &client,"/");
 		}
 		else if(input->wasKeyDown(getKeySetting("keymap_console")))
 		{
@@ -2139,7 +2251,7 @@ void the_game(
 			else{
 				s32 dx = input->getMousePos().X - displaycenter.X;
 				s32 dy = input->getMousePos().Y - displaycenter.Y;
-				if(invert_mouse)
+				if(invert_mouse || player->camera_mode == CAMERA_MODE_THIRD_FRONT)
 					dy = -dy;
 				//infostream<<"window active, pos difference "<<dx<<","<<dy<<std::endl;
 				
@@ -2204,18 +2316,17 @@ void the_game(
 				camera_yaw
 			);
 			client.setPlayerControl(control);
-			u32 keyPressed=
-			1*(int)input->isKeyDown(getKeySetting("keymap_forward"))+
-			2*(int)input->isKeyDown(getKeySetting("keymap_backward"))+
-			4*(int)input->isKeyDown(getKeySetting("keymap_left"))+
-			8*(int)input->isKeyDown(getKeySetting("keymap_right"))+
-			16*(int)input->isKeyDown(getKeySetting("keymap_jump"))+
-			32*(int)input->isKeyDown(getKeySetting("keymap_special1"))+
-			64*(int)input->isKeyDown(getKeySetting("keymap_sneak"))+
-			128*(int)input->getLeftState()+
-			256*(int)input->getRightState();
 			LocalPlayer* player = client.getEnv().getLocalPlayer();
-			player->keyPressed=keyPressed;
+			player->keyPressed=
+			(((int)input->isKeyDown(getKeySetting("keymap_forward"))  & 0x1) << 0) |
+			(((int)input->isKeyDown(getKeySetting("keymap_backward")) & 0x1) << 1) |
+			(((int)input->isKeyDown(getKeySetting("keymap_left"))     & 0x1) << 2) |
+			(((int)input->isKeyDown(getKeySetting("keymap_right"))    & 0x1) << 3) |
+			(((int)input->isKeyDown(getKeySetting("keymap_jump"))     & 0x1) << 4) |
+			(((int)input->isKeyDown(getKeySetting("keymap_special1")) & 0x1) << 5) |
+			(((int)input->isKeyDown(getKeySetting("keymap_sneak"))    & 0x1) << 6) |
+			(((int)input->getLeftState()  & 0x1) << 7) |
+			(((int)input->getRightState() & 0x1) << 8);
 		}
 
 		/*
@@ -2317,6 +2428,7 @@ void the_game(
 								new GUIFormSpecMenu(device, guiroot, -1,
 										&g_menumgr,
 										&client, gamedef, tsrc);
+						menu->doPause = false;
 						menu->setFormSource(current_formspec);
 						menu->setTextDest(current_textdest);
 						menu->drop();
@@ -2547,13 +2659,24 @@ void the_game(
 		LocalPlayer* player = client.getEnv().getLocalPlayer();
 		float full_punch_interval = playeritem_toolcap.full_punch_interval;
 		float tool_reload_ratio = time_from_last_punch / full_punch_interval;
+
+		if(input->wasKeyDown(getKeySetting("keymap_camera_mode"))) {
+
+			if (current_camera_mode == CAMERA_MODE_FIRST)
+				current_camera_mode = CAMERA_MODE_THIRD;
+			else if (current_camera_mode == CAMERA_MODE_THIRD)
+				current_camera_mode = CAMERA_MODE_THIRD_FRONT;
+			else
+				current_camera_mode = CAMERA_MODE_FIRST;
+
+		}
+		player->camera_mode = current_camera_mode;
 		tool_reload_ratio = MYMIN(tool_reload_ratio, 1.0);
-		camera.update(player, dtime, busytime, screensize,
-				tool_reload_ratio);
+		camera.update(player, dtime, busytime, screensize, tool_reload_ratio,
+				current_camera_mode, client.getEnv());
 		camera.step(dtime);
 
 		v3f player_position = player->getPosition();
-		v3s16 pos_i = floatToInt(player_position, BS);
 		v3f camera_position = camera.getPosition();
 		v3f camera_direction = camera.getDirection();
 		f32 camera_fov = camera.getFovMax();
@@ -2573,7 +2696,7 @@ void the_game(
 		}
 		
 		// Update sound listener
-		sound->updateListener(camera.getCameraNode()->getPosition(),
+		sound->updateListener(camera.getCameraNode()->getPosition()+intToFloat(camera_offset, BS),
 				v3f(0,0,0), // velocity
 				camera.getDirection(),
 				camera.getCameraNode()->getUpVector());
@@ -2604,6 +2727,10 @@ void the_game(
 			d = 4.0;
 		core::line3d<f32> shootline(camera_position,
 				camera_position + camera_direction * BS * (d+1));
+
+		// prevent player pointing anything in front-view
+		if (current_camera_mode == CAMERA_MODE_THIRD_FRONT)
+			shootline = core::line3d<f32>(0,0,0,0,0,0);
 
 		ClientActiveObject *selected_object = NULL;
 
@@ -2871,6 +2998,7 @@ void the_game(
 						new GUIFormSpecMenu(device, guiroot, -1,
 							&g_menumgr,
 							&client, gamedef, tsrc);
+					menu->doPause = false;
 					menu->setFormSpec(meta->getString("formspec"),
 							inventoryloc);
 					menu->setFormSource(new NodeMetadataFormSource(
@@ -2980,8 +3108,6 @@ void the_game(
 			fog_range = 100000*BS;
 		else {
 			fog_range = draw_control.wanted_range*BS + 0.0*MAP_BLOCKSIZE*BS;
-			if(use_weather)
-				fog_range *= (1.5 - 1.4*(float)client.getEnv().getClientMap().getHumidity(pos_i)/100);
 			fog_range = MYMIN(fog_range, (draw_control.farthest_drawn+20)*BS);
 			fog_range *= 0.9;
 		}
@@ -3131,9 +3257,7 @@ void the_game(
 				<<", "<<(player_position.Y/BS)
 				<<", "<<(player_position.Z/BS)
 				<<") (yaw="<<(wrapDegrees_0_360(camera_yaw))
-				<<") (t="<<client.getEnv().getClientMap().getHeat(pos_i)
-				<<"C, h="<<client.getEnv().getClientMap().getHumidity(pos_i)
-				<<"%) (seed = "<<((unsigned long long)client.getMapSeed())
+				<<") (seed = "<<((u64)client.getMapSeed())
 				<<")";
 			guitext2->setText(narrow_to_wide(os.str()).c_str());
 			guitext2->setVisible(true);
@@ -3394,7 +3518,9 @@ void the_game(
 		/*
 			Wielded tool
 		*/
-		if(show_hud && (player->hud_flags & HUD_FLAG_WIELDITEM_VISIBLE))
+		if(show_hud &&
+			(player->hud_flags & HUD_FLAG_WIELDITEM_VISIBLE) &&
+			current_camera_mode < CAMERA_MODE_THIRD)
 		{
 			// Warning: This clears the Z buffer.
 			camera.drawWieldedTool();

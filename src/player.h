@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "irrlichttypes_bloated.h"
 #include "inventory.h"
 #include "constants.h" // BS
+#include <list>
 
 #define PLAYERNAME_SIZE 20
 
@@ -88,6 +89,7 @@ class IGameDef;
 struct CollisionInfo;
 class PlayerSAO;
 struct HudElement;
+class Environment;
 
 class Player
 {
@@ -96,7 +98,10 @@ public:
 	Player(IGameDef *gamedef);
 	virtual ~Player() = 0;
 
-	virtual void move(f32 dtime, Map &map, f32 pos_max_d)
+	virtual void move(f32 dtime, Environment *env, f32 pos_max_d)
+	{}
+	virtual void move(f32 dtime, Environment *env, f32 pos_max_d,
+			std::list<CollisionInfo> *collision_info)
 	{}
 
 	v3f getSpeed()
@@ -268,6 +273,9 @@ public:
 	float physics_override_gravity;
 	bool physics_override_sneak;
 	bool physics_override_sneak_glitch;
+
+	v2s32 local_animations[4];
+	float local_animation_speed;
 
 	u16 hp;
 

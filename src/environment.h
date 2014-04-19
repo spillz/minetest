@@ -105,6 +105,9 @@ public:
 		m_day_night_ratio_override = value;
 	}
 
+	// counter used internally when triggering ABMs
+	u32 m_added_objects;
+
 protected:
 	// peer_ids in here should be unique, except that there may be many 0s
 	std::list<Player*> m_players;
@@ -118,6 +121,7 @@ protected:
 	// Overriding the day-night ratio is useful for custom sky visuals
 	bool m_enable_day_night_ratio_override;
 	u32 m_day_night_ratio_override;
+
 };
 
 /*
@@ -310,9 +314,6 @@ public:
 	void reportMaxLagEstimate(float f) { m_max_lag_estimate = f; }
 	float getMaxLagEstimate() { return m_max_lag_estimate; }
 	
-	// is weather active in this environment?
-	bool m_use_weather;
-	
 	std::set<v3s16>* getForceloadedBlocks() { return &m_active_blocks.m_forceloaded_list; };
 	
 private:
@@ -370,7 +371,6 @@ private:
 	// Outgoing network message buffer for active objects
 	std::list<ActiveObjectMessage> m_active_object_messages;
 	// Some timers
-	float m_random_spawn_timer; // used for experimental code
 	float m_send_recommended_timer;
 	IntervalLimiter m_object_management_interval;
 	// List of active blocks

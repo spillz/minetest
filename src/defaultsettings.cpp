@@ -53,6 +53,7 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("keymap_toggle_update_camera", "KEY_F4");
 	settings->setDefault("keymap_toggle_debug", "KEY_F5");
 	settings->setDefault("keymap_toggle_profiler", "KEY_F6");
+	settings->setDefault("keymap_camera_mode", "KEY_F7");
 	settings->setDefault("keymap_increase_viewing_range_min", "+");
 	settings->setDefault("keymap_decrease_viewing_range_min", "-");
 	settings->setDefault("anaglyph", "false");
@@ -130,8 +131,11 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("preload_item_visuals", "true");
 	settings->setDefault("enable_bumpmapping", "false");
 	settings->setDefault("enable_parallax_occlusion", "false");
-	settings->setDefault("parallax_occlusion_scale", "0.08");
-	settings->setDefault("parallax_occlusion_bias", "0.04");
+	settings->setDefault("generate_normalmaps", "false");
+	settings->setDefault("normalmaps_strength", "0.6");
+	settings->setDefault("normalmaps_smooth", "1");
+	settings->setDefault("parallax_occlusion_scale", "0.06");
+	settings->setDefault("parallax_occlusion_bias", "0.03");
 	settings->setDefault("enable_waving_water", "false");
 	settings->setDefault("water_wave_height", "1.0");
 	settings->setDefault("water_wave_length", "20.0");
@@ -240,13 +244,8 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("movement_gravity", "9.81");
 
 	//liquid stuff
-	settings->setDefault("liquid_finite", "false");
 	settings->setDefault("liquid_loop_max", "10000");
 	settings->setDefault("liquid_update", "1.0");
-	settings->setDefault("liquid_relax", "2");
-	settings->setDefault("liquid_fast_flood", "1");
-	settings->setDefault("underground_springs", "1");
-	settings->setDefault("weather", "false");
 
 	//mapgen stuff
 	settings->setDefault("mg_name", "v6");

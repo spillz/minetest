@@ -55,7 +55,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "constants.h"
 #include "porting.h"
 #include "gettime.h"
-#include "guiMessageMenu.h"
 #include "filesys.h"
 #include "config.h"
 #include "version.h"
@@ -84,6 +83,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "database-sqlite3.h"
 #ifdef USE_LEVELDB
 #include "database-leveldb.h"
+#endif
+#if USE_REDIS
+#include "database-redis.h"
 #endif
 
 /*
@@ -361,7 +363,6 @@ public:
 	s32 mouse_wheel;
 
 private:
-	IrrlichtDevice *m_device;
 
 	// The current state of keys
 	KeyList keyIsDown;
@@ -1024,21 +1025,6 @@ int main(int argc, char *argv[])
 	if(port == 0)
 		port = 30000;
 
-	// Bind address
-	std::string bind_str = g_settings->get("bind_address");
-	Address bind_addr(0,0,0,0, port);
-	try {
-		bind_addr.Resolve(bind_str.c_str());
-	} catch (ResolveError &e) {
-		infostream << "Resolving bind address \"" << bind_str
-		           << "\" failed: " << e.what()
-		           << " -- Listening on all addresses." << std::endl;
-
-		if (g_settings->getBool("ipv6_server")) {
-			bind_addr.setAddress((IPv6AddressBytes*) NULL);
-		}
-	}
-
 	// World directory
 	std::string commanded_world = "";
 	if(cmd_args.exists("world"))
@@ -1224,8 +1210,29 @@ int main(int argc, char *argv[])
 		}
 		verbosestream<<_("Using gameid")<<" ["<<gamespec.id<<"]"<<std::endl;
 
+		// Bind address
+		std::string bind_str = g_settings->get("bind_address");
+		Address bind_addr(0,0,0,0, port);
+
+		if (g_settings->getBool("ipv6_server")) {
+			bind_addr.setAddress((IPv6AddressBytes*) NULL);
+		}
+		try {
+			bind_addr.Resolve(bind_str.c_str());
+		} catch (ResolveError &e) {
+			infostream << "Resolving bind address \"" << bind_str
+			           << "\" failed: " << e.what()
+		        	   << " -- Listening on all addresses." << std::endl;
+		}
+		if(bind_addr.isIPv6() && !g_settings->getBool("enable_ipv6")) {
+			errorstream << "Unable to listen on "
+			            << bind_addr.serializeString()
+				    << L" because IPv6 is disabled" << std::endl;
+			return 1;
+		}
+
 		// Create server
-		Server server(world_path, gamespec, false);
+		Server server(world_path, gamespec, false, bind_addr.isIPv6());
 
 		// Database migration
 		if (cmd_args.exists("migrate")) {
@@ -1238,7 +1245,7 @@ int main(int argc, char *argv[])
 			}
 			if (!world_mt.exists("backend")) {
 				errorstream << "Please specify your current backend in world.mt file:"
-					<< std::endl << "	backend = {sqlite3|leveldb|dummy}" << std::endl;
+					<< std::endl << "	backend = {sqlite3|leveldb|redis|dummy}" << std::endl;
 				return 1;
 			}
 			std::string backend = world_mt.get("backend");
@@ -1252,6 +1259,10 @@ int main(int argc, char *argv[])
 			#if USE_LEVELDB
 			else if (migrate_to == "leveldb")
 				new_db = new Database_LevelDB(&(ServerMap&)server.getMap(), world_path);
+			#endif
+			#if USE_REDIS
+			else if (migrate_to == "redis")
+				new_db = new Database_Redis(&(ServerMap&)server.getMap(), world_path);
 			#endif
 			else {
 				errorstream << "Migration to " << migrate_to << " is not supported" << std::endl;

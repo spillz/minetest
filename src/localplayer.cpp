@@ -43,6 +43,10 @@ LocalPlayer::LocalPlayer(IGameDef *gamedef):
 	last_pitch(0),
 	last_yaw(0),
 	last_keyPressed(0),
+	camera_mode(0),
+	eye_offset_first(v3f(0,0,0)),
+	eye_offset_third(v3f(0,0,0)),
+	last_animation(NO_ANIM),
 	hotbar_image(""),
 	hotbar_selected_image(""),
 	m_sneak_node(32767,32767,32767),
@@ -61,7 +65,7 @@ LocalPlayer::~LocalPlayer()
 {
 }
 
-void LocalPlayer::move(f32 dtime, ClientEnvironment *env, f32 pos_max_d,
+void LocalPlayer::move(f32 dtime, Environment *env, f32 pos_max_d,
 		std::list<CollisionInfo> *collision_info)
 {
 	Map *map = &env->getMap();
@@ -356,7 +360,7 @@ void LocalPlayer::move(f32 dtime, ClientEnvironment *env, f32 pos_max_d,
 		m_can_jump = false;
 }
 
-void LocalPlayer::move(f32 dtime, ClientEnvironment *env, f32 pos_max_d)
+void LocalPlayer::move(f32 dtime, Environment *env, f32 pos_max_d)
 {
 	move(dtime, env, pos_max_d, NULL);
 }

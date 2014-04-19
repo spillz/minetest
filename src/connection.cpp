@@ -212,7 +212,7 @@ SharedBuffer<u8> makeReliablePacket(
 	ReliablePacketBuffer
 */
 
-ReliablePacketBuffer::ReliablePacketBuffer(): m_list_size(0),writeptr(0) {}
+ReliablePacketBuffer::ReliablePacketBuffer(): m_list_size(0) {}
 
 void ReliablePacketBuffer::print()
 {
@@ -1170,7 +1170,7 @@ void UDPPeer::RunCommandQueues(
 					channels[i].queued_commands.push_front(c);
 				}
 			}
-			catch (ItemNotFoundException e) {
+			catch (ItemNotFoundException &e) {
 				// intentionally empty
 			}
 		}
@@ -1226,6 +1226,8 @@ void * ConnectionSendThread::Thread()
 
 	PROFILE(std::stringstream ThreadIdentifier);
 	PROFILE(ThreadIdentifier << "ConnectionSend: [" << m_connection->getDesc() << "]");
+
+	porting::setThreadName("ConnectionSend");
 
 	/* if stop is requested don't stop immediately but try to send all        */
 	/* packets first */
@@ -1939,8 +1941,7 @@ void ConnectionSendThread::sendAsPacket(u16 peer_id, u8 channelnum,
 
 ConnectionReceiveThread::ConnectionReceiveThread(Connection* parent,
 												unsigned int max_packet_size) :
-	m_connection(parent),
-	m_max_packet_size(max_packet_size)
+	m_connection(parent)
 {
 }
 
@@ -1954,6 +1955,8 @@ void * ConnectionReceiveThread::Thread()
 
 	PROFILE(std::stringstream ThreadIdentifier);
 	PROFILE(ThreadIdentifier << "ConnectionReceive: [" << m_connection->getDesc() << "]");
+
+	porting::setThreadName("ConnectionReceive");
 
 #ifdef DEBUG_CONNECTION_KBPS
 	u32 curtime = porting::getTimeMs();
@@ -2067,7 +2070,7 @@ void ConnectionReceiveThread::receive()
 						m_connection->putEvent(e);
 					}
 				}
-				catch(ProcessedSilentlyException e) {
+				catch(ProcessedSilentlyException &e) {
 					/* try reading again */
 				}
 			}
@@ -2875,11 +2878,11 @@ Address Connection::GetPeerAddress(u16 peer_id)
 	return peer_address;
 }
 
-float Connection::GetPeerAvgRTT(u16 peer_id)
+float Connection::getPeerStat(u16 peer_id, rtt_stat_type type)
 {
 	PeerHelper peer = getPeerNoEx(peer_id);
 	if (!peer) return -1;
-	return peer->getStat(AVG_RTT);
+	return peer->getStat(type);
 }
 
 u16 Connection::createPeer(Address& sender, MTProtocols protocol, int fd)

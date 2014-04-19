@@ -93,24 +93,10 @@
 #enable_fog = true
 # Enable a bit lower water surface; disable for speed (not quite optimized)
 #new_style_water = false
-# Constant volume liquids
-#liquid_finite = false
 # Max liquids processed per step
 #liquid_loop_max = 10000
 # Update liquids every .. recommend for finite: 0.2
 #liquid_update = 1.0
-# Relax flowing blocks to source if level near max and N nearby
-#  source blocks, more realistic, but not true constant.
-#  values: 0,1,2,3,4 : 0 - disable, 1 - most aggresive
-#  (for finite liquids)
-#liquid_relax = 2
-# Optimization: faster cave flood (and not true constant)
-#  (for finite liquids)
-#liquid_fast_flood = 1
-# Underground water and lava springs, its infnity sources if liquid_finite enabled
-#underground_springs = 1
-# Enable weather (cold-hot, water freeze-melt). use only with liquid_finite=1
-#weather = false
 # Enable nice leaves; disable for speed
 #new_style_leaves = true
 # Enable smooth lighting with simple ambient occlusion;
@@ -173,6 +159,14 @@
 # Set to true to enable textures bumpmapping. Requires shaders enabled.
 #enable_bumpmapping = false
 # Set to true enables parallax occlusion mapping. Requires shaders enabled.
+#generate_normalmaps = false
+# Set to true enables on the fly normalmap generation (Emboss effect).
+# Requires bumpmapping enabled.
+#normalmaps_strength = 0.6
+# Strength of generated normalmaps
+#normalmaps_smooth = 1
+# Defines sampling step of texture (0 - 2) 
+# Higher the value normal maps will be smoother
 #enable_parallax_occlusion = false
 # Scale of parallax occlusion effect
 #parallax_occlusion_scale = 0.08
@@ -353,6 +347,7 @@
 # try reducing it, but don't reduce it to a number below double of targeted
 # client number
 #max_packets_per_iteration = 1024
+
 #
 # Physics stuff
 #
@@ -430,6 +425,7 @@
 #enable_ipv6 = true
 # Enable/disable running an IPv6 server.  An IPv6 server may be restricted
 # to IPv6 clients, depending on system configuration.
+# Ignored if bind_address is set.
 #ipv6_server = false
 
 #main_menu_script =

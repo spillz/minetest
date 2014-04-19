@@ -99,6 +99,8 @@ void * ServerThread::Thread()
 
 	ThreadStarted();
 
+	porting::setThreadName("ServerThread");
+
 	while(!StopRequested())
 	{
 		try{
@@ -164,7 +166,8 @@ v3f ServerSoundParams::getPos(ServerEnvironment *env, bool *pos_exists) const
 Server::Server(
 		const std::string &path_world,
 		const SubgameSpec &gamespec,
-		bool simple_singleplayer_mode
+		bool simple_singleplayer_mode,
+		bool ipv6
 	):
 	m_path_world(path_world),
 	m_gamespec(gamespec),
@@ -174,7 +177,7 @@ Server::Server(
 	m_con(PROTOCOL_ID,
 			512,
 			CONNECTION_TIMEOUT,
-			g_settings->getBool("enable_ipv6") && g_settings->getBool("ipv6_server"),
+			ipv6,
 			this),
 	m_banmanager(NULL),
 	m_rollback(NULL),
@@ -1191,6 +1194,111 @@ void Server::Receive()
 
 		m_env->removePlayer(peer_id);*/
 	}
+	catch(ClientStateError &e)
+	{
+		errorstream << "ProcessData: peer=" << peer_id  << e.what() << std::endl;
+		DenyAccess(peer_id, L"Your client sent something server didn't expect."
+				L"Try reconnecting or updating your client");
+	}
+}
+
+PlayerSAO* Server::StageTwoClientInit(u16 peer_id)
+{
+	std::string playername = "";
+	PlayerSAO *playersao = NULL;
+	m_clients.Lock();
+	RemoteClient* client = m_clients.lockedGetClientNoEx(peer_id,InitDone);
+	if (client != NULL) {
+		playername = client->getName();
+		playersao = emergePlayer(playername.c_str(), peer_id);
+	}
+	m_clients.Unlock();
+
+	RemotePlayer *player =
+		static_cast<RemotePlayer*>(m_env->getPlayer(playername.c_str()));
+
+	// If failed, cancel
+	if((playersao == NULL) || (player == NULL))
+	{
+		if(player && player->peer_id != 0){
+			errorstream<<"Server: "<<playername<<": Failed to emerge player"
+					<<" (player allocated to an another client)"<<std::endl;
+			DenyAccess(peer_id, L"Another client is connected with this "
+					L"name. If your client closed unexpectedly, try again in "
+					L"a minute.");
+		} else {
+			errorstream<<"Server: "<<playername<<": Failed to emerge player"
+					<<std::endl;
+			DenyAccess(peer_id, L"Could not allocate player.");
+		}
+		return NULL;
+	}
+
+	/*
+		Send complete position information
+	*/
+	SendMovePlayer(peer_id);
+
+	// Send privileges
+	SendPlayerPrivileges(peer_id);
+
+	// Send inventory formspec
+	SendPlayerInventoryFormspec(peer_id);
+
+	// Send inventory
+	UpdateCrafting(peer_id);
+	SendInventory(peer_id);
+
+	// Send HP
+	if(g_settings->getBool("enable_damage"))
+		SendPlayerHP(peer_id);
+
+	// Send Breath
+	SendPlayerBreath(peer_id);
+
+	// Show death screen if necessary
+	if(player->hp == 0)
+		SendDeathscreen(peer_id, false, v3f(0,0,0));
+
+	// Note things in chat if not in simple singleplayer mode
+	if(!m_simple_singleplayer_mode)
+	{
+		// Send information about server to player in chat
+		SendChatMessage(peer_id, getStatusString());
+
+		// Send information about joining in chat
+		{
+			std::wstring name = L"unknown";
+			Player *player = m_env->getPlayer(peer_id);
+			if(player != NULL)
+				name = narrow_to_wide(player->getName());
+
+			std::wstring message;
+			message += L"*** ";
+			message += name;
+			message += L" joined the game.";
+			SendChatMessage(PEER_ID_INEXISTENT,message);
+		}
+	}
+
+	actionstream<<player->getName() <<" joins game. " << std::endl;
+	/*
+		Print out action
+	*/
+	{
+		std::vector<std::string> names = m_clients.getPlayerNames();
+
+		actionstream<<player->getName() <<" joins game. List of players: ";
+
+		for (std::vector<std::string>::iterator i = names.begin();
+				i != names.end(); i++)
+		{
+			actionstream << *i << " ";
+		}
+
+		actionstream<<std::endl;
+	}
+	return playersao;
 }
 
 void Server::ProcessData(u8 *data, u32 datasize, u16 peer_id)
@@ -1543,6 +1651,21 @@ void Server::ProcessData(u8 *data, u32 datasize, u16 peer_id)
 		m_clients.event(peer_id, GotInit2);
 		u16 protocol_version = m_clients.getProtocolVersion(peer_id);
 
+
+		///// begin compatibility code
+		PlayerSAO* playersao = NULL;
+		if (protocol_version <= 22) {
+			playersao = StageTwoClientInit(peer_id);
+
+			if (playersao == NULL) {
+				errorstream
+					<< "TOSERVER_INIT2 stage 2 client init failed for peer "
+					<< peer_id << std::endl;
+				return;
+			}
+		}
+		///// end compatibility code
+
 		/*
 			Send some initialization data
 		*/
@@ -1572,6 +1695,13 @@ void Server::ProcessData(u8 *data, u32 datasize, u16 peer_id)
 		float time_speed = g_settings->getFloat("time_speed");
 		SendTimeOfDay(peer_id, time, time_speed);
 
+		///// begin compatibility code
+		if (protocol_version <= 22) {
+			m_clients.event(peer_id, SetClientReady);
+			m_script->on_joinplayer(playersao);
+		}
+		///// end compatibility code
+
 		// Warnings about protocol version can be issued here
 		if(getClient(peer_id)->net_proto_version < LATEST_PROTOCOL_VERSION)
 		{
@@ -1583,6 +1713,7 @@ void Server::ProcessData(u8 *data, u32 datasize, u16 peer_id)
 	}
 
 	u8 peer_ser_ver = getClient(peer_id,InitDone)->serialization_version;
+	u16 peer_proto_ver = getClient(peer_id,InitDone)->net_proto_version;
 
 	if(peer_ser_ver == SER_FMT_VER_INVALID)
 	{
@@ -1615,105 +1746,34 @@ void Server::ProcessData(u8 *data, u32 datasize, u16 peer_id)
 		return;
 	}
 	else if(command == TOSERVER_RECEIVED_MEDIA) {
-		std::string playername = "";
-		PlayerSAO *playersao = NULL;
-		m_clients.Lock();
-		RemoteClient* client = m_clients.lockedGetClientNoEx(peer_id,DefinitionsSent);
-		if (client != NULL) {
-			playername = client->getName();
-			playersao = emergePlayer(playername.c_str(), peer_id);
-		}
-		m_clients.Unlock();
+		return;
+	}
+	else if(command == TOSERVER_CLIENT_READY) {
+		// clients <= protocol version 22 did not send ready message,
+		// they're already initialized
+		assert(peer_proto_ver > 22);
 
-		RemotePlayer *player =
-			static_cast<RemotePlayer*>(m_env->getPlayer(playername.c_str()));
+		PlayerSAO* playersao = StageTwoClientInit(peer_id);
 
-		// If failed, cancel
-		if((playersao == NULL) || (player == NULL))
-		{
-			if(player && player->peer_id != 0){
-				errorstream<<"Server: "<<playername<<": Failed to emerge player"
-						<<" (player allocated to an another client)"<<std::endl;
-				DenyAccess(peer_id, L"Another client is connected with this "
-						L"name. If your client closed unexpectedly, try again in "
-						L"a minute.");
-			} else {
-				errorstream<<"Server: "<<playername<<": Failed to emerge player"
-						<<std::endl;
-				DenyAccess(peer_id, L"Could not allocate player.");
-			}
+		if (playersao == NULL) {
+			errorstream
+				<< "TOSERVER_CLIENT_READY stage 2 client init failed for peer "
+				<< peer_id << std::endl;
 			return;
 		}
 
-		/*
-			Send complete position information
-		*/
-		SendMovePlayer(peer_id);
 
-		// Send privileges
-		SendPlayerPrivileges(peer_id);
+		if(datasize < 2+8)
+			return;
 
-		// Send inventory formspec
-		SendPlayerInventoryFormspec(peer_id);
+		m_clients.setClientVersion(
+				peer_id,
+				data[2], data[3], data[4],
+				std::string((char*) &data[8],(u16) data[6]));
 
-		// Send inventory
-		UpdateCrafting(peer_id);
-		SendInventory(peer_id);
-
-		// Send HP
-		if(g_settings->getBool("enable_damage"))
-			SendPlayerHP(peer_id);
-
-		// Send Breath
-		SendPlayerBreath(peer_id);
-
-		// Show death screen if necessary
-		if(player->hp == 0)
-			SendDeathscreen(peer_id, false, v3f(0,0,0));
-
-		// Note things in chat if not in simple singleplayer mode
-		if(!m_simple_singleplayer_mode)
-		{
-			// Send information about server to player in chat
-			SendChatMessage(peer_id, getStatusString());
-
-			// Send information about joining in chat
-			{
-				std::wstring name = L"unknown";
-				Player *player = m_env->getPlayer(peer_id);
-				if(player != NULL)
-					name = narrow_to_wide(player->getName());
-
-				std::wstring message;
-				message += L"*** ";
-				message += name;
-				message += L" joined the game.";
-				SendChatMessage(PEER_ID_INEXISTENT,message);
-			}
-		}
-
-		actionstream<<player->getName()<<" ["<<addr_s<<"] "<<"joins game. " << std::endl;
-		/*
-			Print out action
-		*/
-		{
-			std::vector<std::string> names = m_clients.getPlayerNames();
-
-			actionstream<<player->getName()<<" ["<<addr_s<<"] "
-					<<"joins game. List of players: ";
-
-			for (std::vector<std::string>::iterator i = names.begin();
-					i != names.end(); i++)
-			{
-				actionstream << *i << " ";
-			}
-
-			actionstream<<std::endl;
-		}
-
-		m_clients.event(peer_id,SetMediaSent);
+		m_clients.event(peer_id, SetClientReady);
 		m_script->on_joinplayer(playersao);
-		return;
+
 	}
 	else if(command == TOSERVER_GOTBLOCKS)
 	{
@@ -2809,6 +2869,46 @@ void Server::deletingPeer(con::Peer *peer, bool timeout)
 	m_peer_change_queue.push_back(c);
 }
 
+bool Server::getClientConInfo(u16 peer_id, con::rtt_stat_type type, float* retval)
+{
+	*retval = m_con.getPeerStat(peer_id,type);
+	if (*retval == -1) return false;
+	return true;
+}
+
+bool Server::getClientInfo(
+		u16          peer_id,
+		ClientState* state,
+		u32*         uptime,
+		u8*          ser_vers,
+		u16*         prot_vers,
+		u8*          major,
+		u8*          minor,
+		u8*          patch,
+		std::string* vers_string
+	)
+{
+	*state = m_clients.getClientState(peer_id);
+	m_clients.Lock();
+	RemoteClient* client = m_clients.lockedGetClientNoEx(peer_id,Invalid);
+
+	if (client == NULL)
+		return false;
+
+	*uptime = client->uptime();
+	*ser_vers = client->serialization_version;
+	*prot_vers = client->net_proto_version;
+
+	*major = client->getMajor();
+	*minor = client->getMinor();
+	*patch = client->getPatch();
+	*vers_string = client->getPatch();
+
+	m_clients.Unlock();
+
+	return true;
+}
+
 void Server::handlePeerChanges()
 {
 	while(m_peer_change_queue.size() > 0)
@@ -3046,8 +3146,8 @@ void Server::SendChatMessage(u16 peer_id, const std::wstring &message)
 	}
 }
 
-void Server::SendShowFormspecMessage(u16 peer_id, const std::string formspec,
-					const std::string formname)
+void Server::SendShowFormspecMessage(u16 peer_id, const std::string &formspec,
+                                     const std::string &formname)
 {
 	DSTACK(__FUNCTION_NAME);
 
@@ -3384,6 +3484,38 @@ void Server::SendMovePlayer(u16 peer_id)
 	m_clients.send(peer_id, 0, data, true);
 }
 
+void Server::SendLocalPlayerAnimations(u16 peer_id, v2s32 animation_frames[4], f32 animation_speed)
+{
+	std::ostringstream os(std::ios_base::binary);
+
+	writeU16(os, TOCLIENT_LOCAL_PLAYER_ANIMATIONS);
+	writeV2S32(os, animation_frames[0]);
+	writeV2S32(os, animation_frames[1]);
+	writeV2S32(os, animation_frames[2]);
+	writeV2S32(os, animation_frames[3]);
+	writeF1000(os, animation_speed);
+
+	// Make data buffer
+	std::string s = os.str();
+	SharedBuffer<u8> data((u8 *)s.c_str(), s.size());
+	// Send as reliable
+	m_clients.send(peer_id, 0, data, true);
+}
+
+void Server::SendEyeOffset(u16 peer_id, v3f first, v3f third)
+{
+	std::ostringstream os(std::ios_base::binary);
+
+	writeU16(os, TOCLIENT_EYE_OFFSET);
+	writeV3F1000(os, first);
+	writeV3F1000(os, third);
+
+	// Make data buffer
+	std::string s = os.str();
+	SharedBuffer<u8> data((u8 *)s.c_str(), s.size());
+	// Send as reliable
+	m_clients.send(peer_id, 0, data, true);
+}
 void Server::SendPlayerPrivileges(u16 peer_id)
 {
 	Player *player = m_env->getPlayer(peer_id);
@@ -3871,8 +4003,8 @@ struct SendableMediaAnnouncement
 	std::string name;
 	std::string sha1_digest;
 
-	SendableMediaAnnouncement(const std::string name_="",
-			const std::string sha1_digest_=""):
+	SendableMediaAnnouncement(const std::string &name_="",
+	                          const std::string &sha1_digest_=""):
 		name(name_),
 		sha1_digest(sha1_digest_)
 	{}
@@ -3933,8 +4065,8 @@ struct SendableMedia
 	std::string path;
 	std::string data;
 
-	SendableMedia(const std::string &name_="", const std::string path_="",
-			const std::string &data_=""):
+	SendableMedia(const std::string &name_="", const std::string &path_="",
+	              const std::string &data_=""):
 		name(name_),
 		path(path_),
 		data(data_)
@@ -4385,7 +4517,7 @@ std::string Server::getBanDescription(const std::string &ip_or_name)
 	return m_banmanager->getBanDescription(ip_or_name);
 }
 
-void Server::notifyPlayer(const char *name, const std::wstring msg)
+void Server::notifyPlayer(const char *name, const std::wstring &msg)
 {
 	Player *player = m_env->getPlayer(name);
 	if(!player)
@@ -4478,6 +4610,24 @@ void Server::hudSetHotbarSelectedImage(Player *player, std::string name) {
 	SendHUDSetParam(player->peer_id, HUD_PARAM_HOTBAR_SELECTED_IMAGE, name);
 }
 
+bool Server::setLocalPlayerAnimations(Player *player, v2s32 animation_frames[4], f32 frame_speed)
+{
+	if (!player)
+		return false;
+
+	SendLocalPlayerAnimations(player->peer_id, animation_frames, frame_speed);
+	return true;
+}
+
+bool Server::setPlayerEyeOffset(Player *player, v3f first, v3f third)
+{
+	if (!player)
+		return false;
+
+	SendEyeOffset(player->peer_id, first, third);
+	return true;
+}
+
 bool Server::setSky(Player *player, const video::SColor &bgcolor,
 		const std::string &type, const std::vector<std::string> &params)
 {
@@ -4498,7 +4648,7 @@ bool Server::overrideDayNightRatio(Player *player, bool do_override,
 	return true;
 }
 
-void Server::notifyPlayers(const std::wstring msg)
+void Server::notifyPlayers(const std::wstring &msg)
 {
 	SendChatMessage(PEER_ID_INEXISTENT,msg);
 }

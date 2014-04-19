@@ -465,12 +465,14 @@ void *EmergeThread::Thread() {
 
 	v3s16 last_tried_pos(-32768,-32768,-32768); // For error output
 	v3s16 p;
-	u8 flags;
+	u8 flags = 0;
 
 	map    = (ServerMap *)&(m_server->m_env->getMap());
 	emerge = m_server->m_emerge;
 	mapgen = emerge->mapgen[id];
 	enable_mapgen_debug_info = emerge->mapgen_debug_info;
+
+	porting::setThreadName("EmergeThread");
 
 	while (!StopRequested())
 	try {

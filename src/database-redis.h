@@ -1,6 +1,6 @@
 /*
 Minetest
-Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+Copyright (C) 2014 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
@@ -17,44 +17,34 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef GUIMESSAGEMENU_HEADER
-#define GUIMESSAGEMENU_HEADER
+#ifndef DATABASE_REDIS_HEADER
+#define DATABASE_REDIS_HEADER
 
-#include "irrlichttypes_extrabloated.h"
-#include "modalMenu.h"
+#include "config.h"
+
+#if USE_REDIS
+
+#include "database.h"
+#include <hiredis.h>
 #include <string>
 
-class GUIMessageMenu : public GUIModalMenu
+class ServerMap;
+
+class Database_Redis : public Database
 {
 public:
-	GUIMessageMenu(gui::IGUIEnvironment* env,
-			gui::IGUIElement* parent, s32 id,
-			IMenuManager *menumgr,
-			std::wstring message_text);
-	~GUIMessageMenu();
-	
-	void removeChildren();
-	/*
-		Remove and re-add (or reposition) stuff
-	*/
-	void regenerateGui(v2u32 screensize);
-
-	void drawMenu();
-
-	bool OnEvent(const SEvent& event);
-
-	/*
-		true = ok'd
-	*/
-	bool getStatus()
-	{
-		return m_status;
-	}
-	
+	Database_Redis(ServerMap *map, std::string savedir);
+	virtual void beginSave();
+	virtual void endSave();
+	virtual void saveBlock(MapBlock *block);
+	virtual MapBlock* loadBlock(v3s16 blockpos);
+	virtual void listAllLoadableBlocks(std::list<v3s16> &dst);
+	virtual int Initialized(void);
+	~Database_Redis();
 private:
-	std::wstring m_message_text;
-	bool m_status;
+	ServerMap *srvmap;
+	redisContext *ctx;
+	std::string hash;
 };
-
 #endif
-
+#endif
