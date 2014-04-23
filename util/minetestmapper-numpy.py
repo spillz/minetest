@@ -27,7 +27,7 @@ import string
 import time
 import argparse
 import sys
-import cStringIO
+import io
 import traceback
 import numpy
 import itertools
@@ -426,7 +426,7 @@ class SQLDB:
         r = self.cur.fetchone()
         if not r:
             return
-        return cStringIO.StringIO(r[0])
+        return io.StringIO(r[0])
 
 class LVLDB:
     def __init__(self, path):
@@ -439,7 +439,7 @@ class LVLDB:
             yield x, y, z, k[0]
 
     def get(self, pos):
-        return cStringIO.StringIO(self.conn.Get(pos))
+        return io.StringIO(self.conn.Get(pos))
 
 
 
@@ -652,7 +652,7 @@ class World:
 
                     # Reuse the unused tail of the file
                     f.close();
-                    f = cStringIO.StringIO(dec_o.unused_data)
+                    f = io.StringIO(dec_o.unused_data)
                     #print("unused data: "+repr(dec_o.unused_data))
 
                     # zlib-compressed node metadata list
@@ -666,7 +666,7 @@ class World:
 
                     # Reuse the unused tail of the file
                     f.close();
-                    f = cStringIO.StringIO(dec_o.unused_data)
+                    f = io.StringIO(dec_o.unused_data)
                     #print("* dec_o.unused_data: "+repr(dec_o.unused_data))
                     data_after_node_metadata = dec_o.unused_data
 
