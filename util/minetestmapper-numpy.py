@@ -27,11 +27,18 @@ import string
 import time
 import argparse
 import sys
-import io
 import traceback
 import numpy
 import itertools
 from PIL import Image, ImageDraw, ImageFont, ImageColor
+
+try:
+    import io
+    BytesIO = io.BytesIO
+except:
+    import cStringIO
+    BytesIO = cStringIO.StringIO
+
 
 TRANSLATION_TABLE = {
     1: 0x800,  # CONTENT_GRASS
@@ -168,7 +175,7 @@ def parse_args():
     parser.add_argument('--drawscale',action='store_const', const = True, default=False, help = 'draw a scale on the border of the map')
     parser.add_argument('--drawplayers',action='store_const', const = True, default = False, help = 'draw markers for players')
     parser.add_argument('--draworigin',action='store_const', const = True, default = False, help = 'draw the position of the origin (0,0)')
-    parser.add_argument('--drawunderground',dest='drawunderground',action='store_const', const = 1, help = 'draw underground areas overlaid on the map')
+    parser.add_argument('--drawunderground',dest='drawunderground',action='store_const', const = 1, default = 0, help = 'draw underground areas overlaid on the map')
     parser.add_argument('--drawunderground-standalone',dest='drawunderground',action='store_const', const = 2, help = 'draw underground areas as a standalone map')
 #    parser.add_argument('--drawunderground',type=str, choices = ('','overlay','standalone'), default = '', help = 'draw underground areas (NOT IMPLEMENTED!)')
     parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes, default = -2000 2000 -2000 2000)')
@@ -195,12 +202,12 @@ def load_colors(fname = "colors.txt"):
     str_to_uid = {}
     uid=2 #unique id, we always use ignore == 0, air == 1 because these are never drawn
     try:
-        f = file("colors.txt")
+        f = open("colors.txt")
     except IOError:
-        f = file(os.path.join(os.path.dirname(__file__), "colors.txt"))
+        f = open(os.path.join(os.path.dirname(__file__), "colors.txt"))
 
     for line in f:
-        values = string.split(line)
+        values = line.split()
         if len(values) < 4:
             continue
         identifier = values[0]
@@ -234,7 +241,7 @@ def legacy_fetch_sector_data(args, sectortype, sector_data, ypos):
         filename = args.world_dir + "sectors/" + sector_data[0] + "/" + yhex.lower()
     else:
         filename = args.world_dir + "sectors2/" + sector_data[1] + "/" + yhex.lower()
-    return file(filename, "rb")
+    return open(filename, "rb")
 
 
 def legacy_sector_scan(args,sectors_xmin, sector_xmax, sector_zmin, sector_zmax):
@@ -426,7 +433,7 @@ class SQLDB:
         r = self.cur.fetchone()
         if not r:
             return
-        return io.StringIO(r[0])
+        return BytesIO(r[0])
 
 class LVLDB:
     def __init__(self, path):
@@ -439,7 +446,7 @@ class LVLDB:
             yield x, y, z, k[0]
 
     def get(self, pos):
-        return io.StringIO(self.conn.Get(pos))
+        return BytesIO(self.conn.Get(pos))
 
 
 
@@ -652,7 +659,7 @@ class World:
 
                     # Reuse the unused tail of the file
                     f.close();
-                    f = io.StringIO(dec_o.unused_data)
+                    f = BytesIO(dec_o.unused_data)
                     #print("unused data: "+repr(dec_o.unused_data))
 
                     # zlib-compressed node metadata list
@@ -666,7 +673,7 @@ class World:
 
                     # Reuse the unused tail of the file
                     f.close();
-                    f = io.StringIO(dec_o.unused_data)
+                    f = BytesIO(dec_o.unused_data)
                     #print("* dec_o.unused_data: "+repr(dec_o.unused_data))
                     data_after_node_metadata = dec_o.unused_data
 
@@ -715,7 +722,7 @@ class World:
                         for i in range(0, num_name_id_mappings):
                             node_id = readU16(f)
                             name_len = readU16(f)
-                            name = f.read(name_len)
+                            name = f.read(name_len).decode('utf8')
                             try:
                                 id_to_name[node_id] = str_to_uid[name]
                             except:
@@ -949,17 +956,17 @@ def draw_image(world,uid_to_color):
     if args.drawplayers:
         try:
             for filename in os.listdir(args.world_dir + "players"):
-                f = file(args.world_dir + "players/" + filename)
+                f = open(args.world_dir + "players/" + filename)
                 lines = f.readlines()
                 name = ""
                 position = []
                 for line in lines:
-                    p = string.split(line)
+                    p = line.split()
                     if p[0] == "name":
                         name = p[2]
                         print(filename + ": name = " + name)
                     if p[0] == "position":
-                        position = string.split(p[2][1:-1], ",")
+                        position = p[2][1:-1].split(",")
                         print(filename + ": position = " + p[2])
                 if len(name) < 0 and len(position) == 3:
                     x,y,z = [int(float(p)/10) for p in position]
