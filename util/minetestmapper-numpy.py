@@ -40,6 +40,30 @@ except:
     BytesIO = cStringIO.StringIO
 
 
+#                                                                                                                                      
+# wrapper around PIL 1.1.6 Image.save to preserve PNG metadata
+#
+# public domain, Nick Galbreath                                                                                                        
+# http://blog.client9.com/2007/08/28/python-pil-and-png-metadata-take-2.html                                                                 
+#                                                                                                                                       
+def pngsave(im, file):
+    # these can be automatically added to Image.info dict                                                                              
+    # they are not user-added metadata
+    reserved = ('interlace', 'gamma', 'dpi', 'transparency', 'aspect')
+
+    # undocumented class
+    from PIL import PngImagePlugin
+    meta = PngImagePlugin.PngInfo()
+
+    # copy metadata into new object
+    for k,v in im.info.iteritems():
+        if k in reserved: continue
+        meta.add_text(k, v, 0)
+
+    # and save
+    im.save(file, "PNG", pnginfo=meta)
+
+
 TRANSLATION_TABLE = {
     1: 0x800,  # CONTENT_GRASS
     4: 0x801,  # CONTENT_TREE
@@ -172,12 +196,12 @@ def parse_args():
     parser.add_argument('--playercolor', default='red', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for player markers')
     parser.add_argument('--fogcolor', default='grey', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for fog (default grey)')
     parser.add_argument('--ugcolor', default='purple', metavar = 'COLOR', type=ImageColor.getrgb, help = 'set the color for underground areas (default purple)')
+    parser.add_argument('--makethumb',action='store_const', const = True, default=False, help = 'create a thumbnail image in addition to the full size image with the file name <outputname>_thumb.png')
     parser.add_argument('--drawscale',action='store_const', const = True, default=False, help = 'draw a scale on the border of the map')
     parser.add_argument('--drawplayers',action='store_const', const = True, default = False, help = 'draw markers for players')
     parser.add_argument('--draworigin',action='store_const', const = True, default = False, help = 'draw the position of the origin (0,0)')
     parser.add_argument('--drawunderground',dest='drawunderground',action='store_const', const = 1, default = 0, help = 'draw underground areas overlaid on the map')
     parser.add_argument('--drawunderground-standalone',dest='drawunderground',action='store_const', const = 2, help = 'draw underground areas as a standalone map')
-#    parser.add_argument('--drawunderground',type=str, choices = ('','overlay','standalone'), default = '', help = 'draw underground areas (NOT IMPLEMENTED!)')
     parser.add_argument('--region', nargs=4, type = int, metavar = ('XMIN','XMAX','ZMIN','ZMAX'), default = (-2000,2000,-2000,2000),help = 'set the bounding x,z coordinates for the map (units are nodes, default = -2000 2000 -2000 2000)')
     parser.add_argument('--maxheight', type = int, metavar = ('YMAX'), default = 500, help = 'don\'t draw above height YMAX (default = 500)')
     parser.add_argument('--minheight', type = int, metavar = ('YMIN'), default = -500, help = 'don\'t draw below height YMIN (defualt = -500)')
@@ -985,8 +1009,42 @@ def draw_image(world,uid_to_color):
         except OSError:
             pass
 
-    print("Saving")
-    im.save(args.output)
+    # worldlimits are measured in cubes of 16x16x16
+    pngminx = minx*16
+    pngmaxx = maxx*16
+    pngminz = minz*16
+    pngmaxz = maxz*16
+    pngregion=[pngminx, pngmaxx, pngminz, pngmaxz]
+
+    print("Saving to: "+ args.output)
+    print("PNG Region: ", pngregion)
+    print("Pixels PerNode: ", args.pixelspernode)
+    print("border: ", border)
+
+    # This saves data in tEXt chunks (non-standard naming tags are allowed according to the PNG specification)
+    im.info["pngRegion"] = str(pngregion[0])+ ","+ str(pngregion[1])+ ","+ str(pngregion[2])+ ","+ str(pngregion[3])
+    im.info["pngMinX"] = str(pngminx)
+    im.info["pngMaxZ"] = str(pngmaxz)
+    im.info["border"] = str(border)
+    im.info["pixPerNode"] = str(args.pixelspernode)
+    pngsave(im, args.output)
+
+    if args.makethumb:
+        # Now create a square 'thumbnail' for display on square faces (which turns out to benefit from quite high resolution).
+        thumbSize = 512
+        imSize = im.size
+        print imSize
+        if imSize[0] > imSize[1]:
+          reSize=(thumbSize, int(thumbSize*(float(imSize[1])/imSize[0])))
+        else:
+          reSize=(int(thumbSize*(float(imSize[0])/imSize[1])), thumbSize)
+        print reSize
+
+        thumbBorder=((thumbSize-reSize[0])/2, (thumbSize-reSize[1])/2, thumbSize-(thumbSize-reSize[0])/2, thumbSize-(thumbSize-reSize[1])/2)
+        print thumbBorder
+        thumbIm = Image.new("RGB", (thumbSize,thumbSize), args.bgcolor)
+        thumbIm.paste(im.resize(reSize),thumbBorder)
+        thumbIm.save(os.path.splitext(args.output)[0]+"_thumb.png", "PNG")
 
 def main():
     args = parse_args()
